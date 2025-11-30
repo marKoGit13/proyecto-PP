@@ -15,6 +15,7 @@ class Game{
     private:
         SDL_Window* window;
         SDL_Renderer* renderer; 
+        SDL_Texture* textureBackground = nullptr;
 
         std::unique_ptr<MovementSystem> movementsystem;
         std::unique_ptr<PlayerInputSystem> playerinputsystem;
@@ -23,7 +24,6 @@ class Game{
         std::unique_ptr<DamageSystem> damagesystem;
         std::unique_ptr<SpawnSystem> spawnsystem;
         std::unique_ptr<TimerSystem> timersystem;
-        SDL_Texture* textureBackground = nullptr;
 
         int cantidad;
         std::string rutaImagenCharacter;
@@ -45,3 +45,4 @@ class Game{
         void Initialize();
         void Run();
 };
+

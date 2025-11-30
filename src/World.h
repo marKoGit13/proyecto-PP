@@ -20,8 +20,6 @@ public:
     World();
     ~World();
 
-    bool IsAreaFree(float x, float y, float w, float h);
-    
     World(const World&) = delete;
     World& operator=(const World&) = delete;
 
@@ -29,6 +27,7 @@ public:
 
     void Emit(const Event& event);
     bool Poll(Event& out, const std::string& type);
+    bool IsAreaFree(float x, float y, float w, float h);
 
     void AddEntity(std::unique_ptr<Entity> entity);
     void AddComponentToEntity(const std::string& Id, std::unique_ptr<Component> component);

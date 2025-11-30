@@ -119,3 +119,4 @@ bool World::IsAreaFree(float x, float y, float w, float h)
     }
     return true; // Está libre
 }
+

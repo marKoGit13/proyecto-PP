@@ -1,4 +1,6 @@
 #include "Game.h"
+#include <cmath> 
+#include <string>
 
 Game::Game() : world()
 {
@@ -65,12 +67,21 @@ void Game::Run()
     Start();
     Uint64 lastFrame = SDL_GetTicks();
     this->isRunning = true;
-    while (isRunning) //Esto se ejecuta cada vez por frame
-    {
-        // Setear el DeltaTime
+    
+    // Variables para el timer visual
+    float totalTime = 0.0f;
+
+    while (isRunning) {
         Uint64 now = SDL_GetTicks();
         float deltaTime = (now - lastFrame) / 1000.0f;
         lastFrame = now;
+        totalTime += deltaTime;
+
+        // --- CORRECCIÓN: MOSTRAR TIEMPO EN TÍTULO ---
+        std::string title = "Space Invaders - Time: " + std::to_string((int)totalTime);
+        SDL_SetWindowTitle(window, title.c_str());
+        // --------------------------------------------
+
         ProcessInput(deltaTime);
         Update(deltaTime);
         Render(deltaTime);
@@ -87,78 +98,49 @@ void Game::Start()
     
     // Configuración inicial del Jugador
     float PosicionX = 960.f;
-    float PosicionY = 1000.f;
+    float PosicionY = 850.f; //antes 1000
     float VelocityX = 0.f;
     float VelocityY = 0.f;
     int HealthPoints = 3;
     
     // CREAR JUGADOR (Primero, para que ocupe espacio en el mundo)
-    std::unique_ptr<Entity> Character = std::make_unique<Entity>("Player_" + std::to_string(0));
+    std::unique_ptr<Entity> Character = std::make_unique<Entity>("Player_0");
     Entity& refCharacter = *Character;
     this->world.AddEntity(std::move(Character));
 
-    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<TransformComponent>(new TransformComponent(PosicionX, PosicionY, VelocityX, VelocityY)));
+    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<TransformComponent>(new TransformComponent(PosicionX, PosicionY, 0.f, 0.f)));
     this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent(rutaImagenCharacter, renderer)));
-    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, std::pair<float,float>{PosicionX + ancho/2, PosicionY - alto/2}))); // Ajustar collider al centro si es necesario
-    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<HealthComponent>(new HealthComponent(HealthPoints)));
+    // Centrar collider
+    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, {PosicionX + ancho/2, PosicionY + alto/2})));
+    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<HealthComponent>(new HealthComponent(3)));
     this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<PlayerComponent>(new PlayerComponent()));
 
     // GENERACIÓN PROCEDIMENTAL DE BARRERAS
     int BarrierCounter = 0;
-    
-    // Recorremos la pantalla en cuadrícula
-    for (size_t j = 64; j < std::get<1>(this->AnchoAlto) - 64; j = j + 64)
-    {
-        for (size_t i = 64; i < std::get<0>(this->AnchoAlto); i = i + 64) 
-        {
-            // Probabilidad baja de iniciar una pared aquí
+    for (size_t j = 64; j < std::get<1>(this->AnchoAlto) - 64; j = j + 64) {
+        for (size_t i = 64; i < std::get<0>(this->AnchoAlto); i = i + 64) {
             float BarrierProbability = NumberRandomizer(true, 0.f, 100.f);
-            if (BarrierProbability < 5.f) 
-            {
+            if (BarrierProbability < 5.f) {
                 int direction = NumberRandomizer(false, 0, 3);
-                int count = NumberRandomizer(false, 3, 6); // Longitud de la pared
-                
-                float CurrentX = i;
-                float CurrentY = j;
-                int OffsetX = 0;
-                int OffsetY = 0;
+                int count = NumberRandomizer(false, 3, 6);
+                float CurX = i; float CurY = j;
+                int OffX = 0, OffY = 0;
+                switch (direction) { case 0: OffX = 64; break; case 1: OffY = 64; break; case 2: OffX = -64; break; case 3: OffY = -64; break; }
 
-                // Definir dirección de crecimiento
-                switch (direction) 
-                {
-                    case 0: OffsetX = 64; break; // Derecha
-                    case 1: OffsetY = 64; break; // Abajo
-                    case 2: OffsetX = -64; break; // Izquierda
-                    case 3: OffsetY = -64; break; // Arriba
-                }
-
-                // Generar los bloques de la pared
-                for (int k = 0; k < count; k++) 
-                {
-                    // --- CORRECCIÓN CLAVE: Verificar si el espacio está libre ---
-                    // Solo creamos la barrera si NO choca con el jugador u otra barrera
-                    if (this->world.IsAreaFree(CurrentX, CurrentY, ancho, alto))
-                    {
+                for (int k = 0; k < count; k++) {
+                    // Usar world.IsAreaFree
+                    if (this->world.IsAreaFree(CurX, CurY, ancho, alto)) {
                         std::unique_ptr<Entity> Barrier = std::make_unique<Entity>("Barrier_" + std::to_string(BarrierCounter));
                         Entity& refBarrier = *Barrier;
                         this->world.AddEntity(std::move(Barrier));
                         
-                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<TransformComponent>(new TransformComponent(CurrentX, CurrentY, 0, 0)));
+                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<TransformComponent>(new TransformComponent(CurX, CurY, 0, 0)));
                         this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent(rutaImagenBarrier, renderer)));
-                        
-                        // Centrar el Collider correctamente respecto a la posición (asumiendo origen top-left)
-                        float midX = CurrentX + ancho / 2.0f;
-                        float midY = CurrentY + alto / 2.0f; 
-                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, std::pair<float,float>{midX, midY})));
-                        
+                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, {CurX + ancho/2, CurY + alto/2})));
                         this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<BarrierComponent>(new BarrierComponent()));
-                        
                         BarrierCounter++;
                     }
-                    
-                    // Mover al siguiente bloque (incluso si no se pudo poner el actual, intentamos el siguiente)
-                    CurrentX += OffsetX;
-                    CurrentY += OffsetY;
+                    CurX += OffX; CurY += OffY;
                 }
             }
         }
@@ -182,18 +164,16 @@ void Game::Update(float deltaTime)
 
 void Game::Render(float deltaTime)
 {
-    // 1. Limpiar pantalla
     SDL_RenderClear(renderer);
 
-    // 2. Dibujar Fondo (Usando la textura ya cargada)
+    // Dibujar Fondo (Usando la textura pre-cargada)
     if (this->textureBackground) {
-        SDL_FRect rectFondo{0, 0, 1920, 1080}; 
+        SDL_FRect rectFondo{0, 0, 1920, 1080};
         SDL_RenderTexture(renderer, this->textureBackground, nullptr, &rectFondo);
     }
 
-    // 3. Dibujar Entidades (Aquí incluimos la lógica de parpadeo dentro del sistema)
+    // Dibujar Entidades
     rendersystem->Update(world, deltaTime);
 
-    // 4. Mostrar
     SDL_RenderPresent(renderer);
 }
