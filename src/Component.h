@@ -1,6 +1,8 @@
 #pragma once
 #include <string>
 #include <tuple>
+#include <thread> // IMPORTANTE: Para multithreading
+#include <atomic> // IMPORTANTE: Para variables seguras entre hilos
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
 
@@ -46,7 +48,6 @@ class ColliderComponent : public Component
         bool Collision(ColliderComponent* collider);    
 };
 
-// Al Health Component se le agrega un MaxHp = Vida Total, Hp = Vida Actual y un Cooldown que marca cuanto falta para que pueda recibir la siguiente instancia de daño
 class HealthComponent : public Component
 {
     public:
@@ -55,11 +56,30 @@ class HealthComponent : public Component
         float Cooldown;
         HealthComponent(int HealthPoints);
 };
-// Al Enemy Component realmente no se le agrega nada, puesto que solo es un identificador
+
+// --- NUEVO: Definición de Roles ---
+enum class EnemyRole {
+    CHASER,   // El agresivo (va directo)
+    FLANKER   // El táctico (rodea)
+};
+
 class EnemyComponent : public Component
 {
     public:
-        EnemyComponent();
+        // Datos de IA
+        EnemyRole role;
+        
+        // Datos de Hilos (Thread Safety)
+        std::atomic<bool> threadActive;  // Bandera para detener el hilo
+        std::thread aiThread;            // El objeto hilo
+        
+        // Comunicación entre Hilo IA y Main Thread
+        // Usamos atomic para que el hilo escriba y el juego lea sin chocar
+        std::atomic<float> targetX; 
+        std::atomic<float> targetY;
+
+        EnemyComponent(EnemyRole assignedRole = EnemyRole::CHASER);
+        ~EnemyComponent(); // Importante: Destructor para cerrar el hilo
 };
 
 class PlayerComponent : public Component

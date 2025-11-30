@@ -26,8 +26,13 @@ SpriteComponent::SpriteComponent(std::string path, SDL_Renderer* renderer)
     Type = "Sprite";
     const char* ruta = path.c_str();
     SDL_Surface* surface = IMG_Load(ruta);
-    Texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_DestroySurface(surface);
+    if (surface) {
+        Texture = SDL_CreateTextureFromSurface(renderer, surface);
+        SDL_DestroySurface(surface);
+    }
+    else {
+        Texture = nullptr; // Seguridad si falla la carga
+    }
 }
 
 ColliderComponent::ColliderComponent(float width, float height, std::tuple<float,float> midPoint)
@@ -69,10 +74,27 @@ HealthComponent::HealthComponent(int HealthPoints)
     Cooldown = 0.f;
 }
 
-EnemyComponent::EnemyComponent()
+// --- ESTA ES LA PARTE QUE TE FALTABA ACTUALIZAR ---
+EnemyComponent::EnemyComponent(EnemyRole assignedRole)
 {
     Type = "Enemy";
+    role = assignedRole;
+    
+    // Inicializar valores atómicos
+    threadActive = true; 
+    targetX = 0.0f;
+    targetY = 0.0f;
 }
+
+EnemyComponent::~EnemyComponent()
+{
+    // Al destruir el componente, aseguramos cerrar el hilo
+    threadActive = false; 
+    if(aiThread.joinable()) {
+        aiThread.join();
+    }
+}
+// --------------------------------------------------
 
 PlayerComponent::PlayerComponent()
 {

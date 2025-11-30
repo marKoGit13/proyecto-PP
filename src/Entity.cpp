@@ -27,6 +27,7 @@ Component* Entity::GetComponent(std::string type)
 {
     for (const std::unique_ptr<Component>& c : components)
     {
+        // Comparamos el Component::Type (string) con el string solicitado
         if (c->Type == type)
         {
             return c.get();
