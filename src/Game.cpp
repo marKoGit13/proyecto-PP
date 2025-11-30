@@ -86,9 +86,11 @@ void Game::Start()
 {
     std::tuple<int, std::string, std::string, std::string, std::string, float, float, float> Information = ReadFromConfigFile("./assets/data.json");
     // Escala global (60%)
-    float scale = 0.6f;
-    float ancho = std::get<5>(Information) * scale;
-    float alto = std::get<6>(Information) * scale;
+    //float scale = 0.6f;
+    //float ancho = std::get<5>(Information) * scale;
+    //float alto = std::get<6>(Information) * scale;
+    float ancho = std::get<5>(Information);
+    float alto = std::get<6>(Information);
 
     // Nave centrada y abajo
     float PosicionX = (1920.0f / 2.0f) - (ancho / 2.0f);
@@ -123,7 +125,7 @@ void Game::Start()
 
     // Generación procedimental de barreras
     int BarrierCounter = 0;
-    int Margin = 100;
+    int Margin = 128;
     for (size_t j = Margin; j < 1080 - Margin; j = j + 64)
     {
         for (size_t i = Margin; i < 1920 - Margin; i = i + 64) 
@@ -138,8 +140,10 @@ void Game::Start()
                 
                 // Ajustar offset según el nuevo tamaño escalado 
                 // Multiplicamos por 0.75f para que se superpongan un 25% 
-                int stepW = (int)(ancho * 0.75f); 
-                int stepH = (int)(alto * 0.75f); 
+                //int stepW = (int)(ancho * 0.75f); 
+                //int stepH = (int)(alto * 0.75f); 
+                int stepW = (int)(ancho); 
+                int stepH = (int)(alto);
 
                 switch (direction) { 
                     case 0: OffX = stepW; break; 
@@ -162,7 +166,6 @@ void Game::Start()
                             std::string selectedSprite = barrierSprites[rndIdx];
                             
                             this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent(selectedSprite, renderer)));
-                            // -----------------------------------------------
 
                             this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, {CurX + ancho/2, CurY + alto/2})));
                             this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<BarrierComponent>(new BarrierComponent()));

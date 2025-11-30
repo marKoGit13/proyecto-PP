@@ -351,28 +351,70 @@ void RenderSystem::Update(World& world, float dt)
                     SDL_DestroySurface(s); SDL_DestroyTexture(t);
                 }
             }
+
         }
     }
 
-    // PANTALLA DE GAME OVER 
+    if (GameFont && !TooBad) {
+        std::string timerText = "Tiempo: " + std::to_string((int)world.TimeElapsed) + " seg";
+        SDL_Color color = {255, 255, 255, 255}; // Blanco
+        
+        SDL_Surface* surf = TTF_RenderText_Solid(GameFont, timerText.c_str(), 0, color);
+        if (surf) {
+            SDL_Texture* tex = SDL_CreateTextureFromSurface(Renderer, surf);
+            // Dibujar en esquina superior izquierda
+            SDL_FRect dest = {20, 20, (float)surf->w, (float)surf->h};
+            SDL_RenderTexture(Renderer, tex, nullptr, &dest);
+            
+            SDL_DestroySurface(surf);
+            SDL_DestroyTexture(tex);
+        }
+    }
+
+    // --- GAME OVER SCREEN ---
     if (TooBad) {
-        // Fondo oscuro semitransparente
         SDL_SetRenderDrawBlendMode(Renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(Renderer, 20, 0, 0, 220);
         SDL_FRect screen = {0, 0, WindowWidth, WindowHeight};
         SDL_RenderFillRect(Renderer, &screen);
         
-        // Mensaje principal
-        SDL_SetRenderDrawColor(Renderer, 255, 50, 50, 255);
-        SDL_SetRenderScale(Renderer, 4.0f, 4.0f);
-        SDL_RenderDebugText(Renderer, (WindowWidth/4 - 80)/2, (WindowHeight/4 - 20)/2, "GAME OVER");
-        
-        // Mensaje de tiempo sobrevivido
-        SDL_SetRenderDrawColor(Renderer, 255, 255, 255, 255);
-        SDL_SetRenderScale(Renderer, 2.0f, 2.0f);
-        std::string msg = "Survived: " + std::to_string((int)world.TimeElapsed) + "s";
-        SDL_RenderDebugText(Renderer, (WindowWidth/2 - 80)/2, (WindowHeight/2 + 50)/2, msg.c_str());
-        SDL_SetRenderScale(Renderer, 1.0f, 1.0f);
+        // Si tenemos fuente, usamos TTF para Game Over, si no, DebugText
+        if (GameFont) {
+             SDL_Color red = {255, 50, 50, 255};
+             SDL_Color white = {255, 255, 255, 255};
+             
+             // Título
+             SDL_Surface* sOver = TTF_RenderText_Solid(GameFont, "GAME OVER", 0, red);
+             if(sOver) {
+                 SDL_Texture* tOver = SDL_CreateTextureFromSurface(Renderer, sOver);
+                 // Escalamos x3 para que sea grande
+                 SDL_FRect rOver = {(WindowWidth - sOver->w*3)/2, (WindowHeight/2 - 100), (float)sOver->w*3, (float)sOver->h*3};
+                 SDL_RenderTexture(Renderer, tOver, nullptr, &rOver);
+                 SDL_DestroySurface(sOver); SDL_DestroyTexture(tOver);
+             }
+
+             // Score
+             std::string msg = "Sobreviviste: " + std::to_string((int)world.TimeElapsed) + " seg";
+             SDL_Surface* sTime = TTF_RenderText_Solid(GameFont, msg.c_str(), 0, white);
+             if(sTime) {
+                 SDL_Texture* tTime = SDL_CreateTextureFromSurface(Renderer, sTime);
+                 SDL_FRect rTime = {(WindowWidth - sTime->w)/2, (WindowHeight/2 + 50), (float)sTime->w, (float)sTime->h};
+                 SDL_RenderTexture(Renderer, tTime, nullptr, &rTime);
+                 SDL_DestroySurface(sTime); SDL_DestroyTexture(tTime);
+             }
+        } 
+        else {
+            // Fallback si no carga fuente
+            SDL_SetRenderDrawColor(Renderer, 255, 50, 50, 255);
+            SDL_SetRenderScale(Renderer, 4.0f, 4.0f);
+            SDL_RenderDebugText(Renderer, (WindowWidth/4 - 80)/2, (WindowHeight/4 - 20)/2, "GAME OVER");
+            
+            SDL_SetRenderDrawColor(Renderer, 255, 255, 255, 255);
+            SDL_SetRenderScale(Renderer, 2.0f, 2.0f);
+            std::string msg = "Time: " + std::to_string((int)world.TimeElapsed) + "s";
+            SDL_RenderDebugText(Renderer, (WindowWidth/2 - 80)/2, (WindowHeight/2 + 50)/2, msg.c_str());
+            SDL_SetRenderScale(Renderer, 1.0f, 1.0f);
+        }
     }
 }
 
