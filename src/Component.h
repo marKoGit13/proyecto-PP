@@ -1,11 +1,12 @@
 #pragma once
 #include <string>
 #include <tuple>
-#include <thread> // IMPORTANTE: Para multithreading
-#include <atomic> // IMPORTANTE: Para variables seguras entre hilos
+#include <thread> 
+#include <atomic> 
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
 
+// Clase base para todos los componentes del ECS
 class Component
 {   
     protected:
@@ -18,6 +19,7 @@ class Component
         virtual ~Component();
 };
 
+// Componente para manejar posición, velocidad y movimiento físico
 class TransformComponent : public Component
 {
     public:
@@ -28,6 +30,7 @@ class TransformComponent : public Component
         TransformComponent(float x, float y, float vx, float vy);
 };
 
+// Componente visual que guarda la textura de la entidad
 class SpriteComponent : public Component
 {
     public:
@@ -35,6 +38,7 @@ class SpriteComponent : public Component
         SpriteComponent(std::string path, SDL_Renderer* renderer);
 };
 
+// Componente para detectar colisiones (Caja delimitadora AABB)
 class ColliderComponent : public Component
 {
     public:
@@ -48,6 +52,7 @@ class ColliderComponent : public Component
         bool Collision(ColliderComponent* collider);    
 };
 
+// Componente de vida y cooldown para invencibilidad
 class HealthComponent : public Component
 {
     public:
@@ -57,31 +62,32 @@ class HealthComponent : public Component
         HealthComponent(int HealthPoints);
 };
 
-// --- NUEVO: Definición de Roles ---
+// Enumeración para los tipos de estrategias de la IA
 enum class EnemyRole {
-    CHASER,   // El agresivo (va directo)
-    FLANKER   // El táctico (rodea)
+    CHASER,   // Persecución directa
+    FLANKER   // Flanqueo y rodeo
 };
 
+// Componente de Enemigo: Contiene la lógica de IA multihilo
 class EnemyComponent : public Component
 {
     public:
-        // Datos de IA
+        // Rol táctico asignado
         EnemyRole role;
         
-        // Datos de Hilos (Thread Safety)
-        std::atomic<bool> threadActive;  // Bandera para detener el hilo
-        std::thread aiThread;            // El objeto hilo
+        // Control de concurrencia para el hilo independiente
+        std::atomic<bool> threadActive;  
+        std::thread aiThread;            
         
-        // Comunicación entre Hilo IA y Main Thread
-        // Usamos atomic para que el hilo escriba y el juego lea sin chocar
+        // Variables atómicas para comunicar el objetivo al hilo principal
         std::atomic<float> targetX; 
         std::atomic<float> targetY;
 
         EnemyComponent(EnemyRole assignedRole = EnemyRole::CHASER);
-        ~EnemyComponent(); // Importante: Destructor para cerrar el hilo
+        ~EnemyComponent(); 
 };
 
+// Etiquetas simples para identificar al Jugador y Barreras
 class PlayerComponent : public Component
 {
     public:

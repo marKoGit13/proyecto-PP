@@ -1,7 +1,7 @@
 #pragma once
 #include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
 #include <SDL3_image/SDL_image.h>
+#include <SDL3_ttf/SDL_ttf.h> 
 #include <tuple>
 #include <string>
 #include <memory>
@@ -22,14 +22,12 @@ class Game
         SDL_Window* window;
         SDL_Renderer* renderer;
         bool isRunning;
-        SDL_Texture* textureBackground = nullptr;
         
-        // --- NUEVO: Fuente del juego ---
+        // Recursos gráficos
+        SDL_Texture* textureBackground = nullptr;
         TTF_Font* globalFont = nullptr;
-        // -------------------------------
 
         std::tuple<int,int> AnchoAlto;
-        // ... resto de variables ...
         int cantidad;
         std::string rutaImagenCharacter;
         std::string rutaImagenBackground;
@@ -37,6 +35,7 @@ class Game
         std::string rutaImagenBarrier;
         float intervalo;
 
+        // Sistemas ECS
         std::unique_ptr<PlayerInputSystem> playerinputsystem;
         std::unique_ptr<MovementSystem> movementsystem;
         std::unique_ptr<RenderSystem> rendersystem;
@@ -49,7 +48,7 @@ class Game
 
     public:
         Game();
-        ~Game(); // Agrega destructor para limpiar TTF
+        ~Game();
         void Initialize();
         void Run();
         void Start();

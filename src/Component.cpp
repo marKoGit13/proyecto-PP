@@ -2,6 +2,7 @@
 
 int Component::cantidad = 0;
 
+// Inicialización base de componentes con ID único
 Component::Component()
 {
     Type = "";
@@ -12,6 +13,7 @@ Component::Component()
 Component::~Component() {
 }
 
+// Inicializa posición y velocidad
 TransformComponent::TransformComponent(float x, float y, float vx, float vy)
 {
     Type = "Transform";
@@ -21,6 +23,7 @@ TransformComponent::TransformComponent(float x, float y, float vx, float vy)
     BaseVelocity = Velocity;
 }
 
+// Carga la imagen desde disco y crea la textura GPU
 SpriteComponent::SpriteComponent(std::string path, SDL_Renderer* renderer)
 {
     Type = "Sprite";
@@ -31,10 +34,11 @@ SpriteComponent::SpriteComponent(std::string path, SDL_Renderer* renderer)
         SDL_DestroySurface(surface);
     }
     else {
-        Texture = nullptr; // Seguridad si falla la carga
+        Texture = nullptr; 
     }
 }
 
+// Configura las dimensiones y centro de la caja de colisión
 ColliderComponent::ColliderComponent(float width, float height, std::tuple<float,float> midPoint)
 {
     Type = "Collider";
@@ -42,6 +46,7 @@ ColliderComponent::ColliderComponent(float width, float height, std::tuple<float
     MidPoint = midPoint;
 }
 
+// Métodos auxiliares para obtener bordes del collider
 float ColliderComponent::getRight()
 {
     return std::get<0>(MidPoint) + std::get<0>(Bounds)/2.0f;
@@ -58,6 +63,8 @@ float ColliderComponent::getBottom()
 {
     return std::get<1>(MidPoint) + std::get<1>(Bounds)/2.0f;
 }
+
+// Lógica simple de intersección de rectángulos
 bool ColliderComponent::Collision(ColliderComponent* collider){
     bool a = this->getLeft() > collider->getRight();
     bool b = this->getRight() < collider->getLeft();
@@ -66,6 +73,7 @@ bool ColliderComponent::Collision(ColliderComponent* collider){
     return !(a || b || c || d);
 }
 
+// Inicializa vida máxima y actual
 HealthComponent::HealthComponent(int HealthPoints)
 {
     Type = "Health";
@@ -74,28 +82,26 @@ HealthComponent::HealthComponent(int HealthPoints)
     Cooldown = 0.f;
 }
 
-// --- ESTA ES LA PARTE QUE TE FALTABA ACTUALIZAR ---
+// Inicializa el componente enemigo y sus variables atómicas
 EnemyComponent::EnemyComponent(EnemyRole assignedRole)
 {
     Type = "Enemy";
     role = assignedRole;
-    
-    // Inicializar valores atómicos
     threadActive = true; 
     targetX = 0.0f;
     targetY = 0.0f;
 }
 
+// Destructor importante: asegura que el hilo de IA se cierre limpiamente
 EnemyComponent::~EnemyComponent()
 {
-    // Al destruir el componente, aseguramos cerrar el hilo
     threadActive = false; 
     if(aiThread.joinable()) {
         aiThread.join();
     }
 }
-// --------------------------------------------------
 
+// Constructores de etiquetas simples
 PlayerComponent::PlayerComponent()
 {
     Type = "Player";

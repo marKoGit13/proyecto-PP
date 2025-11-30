@@ -12,7 +12,7 @@ bool ISystem::TooBad = false;
 ISystem::ISystem() {}
 ISystem::~ISystem() {}
 
-// Auxiliares
+// Función auxiliar para cálculo de superposición AABB
 bool CheckOverlap(ColliderComponent* a, ColliderComponent* b, float& overlapX, float& overlapY) {
     float dx = std::get<0>(a->MidPoint) - std::get<0>(b->MidPoint);
     float dy = std::get<1>(a->MidPoint) - std::get<1>(b->MidPoint);
@@ -27,9 +27,7 @@ bool CheckOverlap(ColliderComponent* a, ColliderComponent* b, float& overlapX, f
     return false;
 }
 
-// ========================
-// PLAYER INPUT
-// ========================
+// PLAYER INPUT SYSTEM
 PlayerInputSystem::PlayerInputSystem(bool& isrunning) : isRunning(isrunning) {}
 
 void PlayerInputSystem::Update(World& world, float dt) {
@@ -41,8 +39,10 @@ void PlayerInputSystem::Update(World& world, float dt) {
     const bool* state = SDL_GetKeyboardState(nullptr);
     if (state[SDL_SCANCODE_ESCAPE]) isRunning = false;
 
+    // Si perdiste, se desactiva el input
     if (ISystem::TooBad) return; 
 
+    // Movimiento suave basado en teclado
     for (auto& entity : world.GetEntities()) {
         if (entity->GetComponent("Player")) {
             auto transform = static_cast<TransformComponent*>(entity->GetComponent("Transform"));
@@ -60,9 +60,7 @@ void PlayerInputSystem::Update(World& world, float dt) {
     }
 }
 
-// ========================
-// MOVEMENT SYSTEM
-// ========================
+// MOVEMENT SYSTEM (FLOCKING + THREADS)
 MovementSystem::MovementSystem() {}
 
 void MovementSystem::Update(World& world, float dt) 
@@ -78,14 +76,17 @@ void MovementSystem::Update(World& world, float dt)
         
         if (!transform) continue;
 
+        // Lógica específica de enemigos: Integración de Hilo IA y Flocking Local
         if (entity->GetComponent("Enemy")) {
             auto enemyComp = static_cast<EnemyComponent*>(entity->GetComponent("Enemy"));
             
+            // Lectura atómica del objetivo dictado por el hilo
             float targetX = enemyComp->targetX;
             float targetY = enemyComp->targetY;
             float myX = std::get<0>(transform->Position);
             float myY = std::get<1>(transform->Position);
 
+            // Cálculo vectorial hacia el objetivo
             float dirX = targetX - myX;
             float dirY = targetY - myY;
             float len = std::sqrt(dirX*dirX + dirY*dirY);
@@ -98,7 +99,7 @@ void MovementSystem::Update(World& world, float dt)
                 moveY = (dirY / len) * speed;
             }
 
-            // Flocking Separation
+            // Flocking: Regla de Separación para evitar superposición de enemigos
             float sepX = 0, sepY = 0;
             int neighbors = 0;
 
@@ -111,6 +112,7 @@ void MovementSystem::Update(World& world, float dt)
                 float ody = myY - std::get<1>(otherTrans->Position);
                 float distSq = odx*odx + ody*ody;
 
+                // Si están demasiado cerca, calcular vector de repulsión
                 if (distSq < 60.0f * 60.0f && distSq > 0.1f) {
                     float dist = std::sqrt(distSq);
                     sepX += (odx / dist) / dist; 
@@ -129,11 +131,11 @@ void MovementSystem::Update(World& world, float dt)
             std::get<1>(transform->Velocity) = moveY;
         }
 
-        // Física
+        // Aplicación de física básica (Euler integration)
         std::get<0>(transform->Position) += std::get<0>(transform->Velocity) * dt;
         std::get<1>(transform->Position) += std::get<1>(transform->Velocity) * dt;
 
-        // Sync Collider
+        // Sincronización del Collider con la nueva posición
         if (collider) {
             collider->MidPoint = {
                 std::get<0>(transform->Position) + std::get<0>(collider->Bounds)/2.0f,
@@ -143,9 +145,7 @@ void MovementSystem::Update(World& world, float dt)
     }
 }
 
-// ========================
 // COLLISION SYSTEM
-// ========================
 CollisionSystem::CollisionSystem(int w, int h) : WindowWidth(w), WindowHeight(h) {}
 
 void CollisionSystem::Update(World& world, float dt) 
@@ -162,7 +162,7 @@ void CollisionSystem::Update(World& world, float dt)
         auto colA = static_cast<ColliderComponent*>(entA->GetComponent("Collider"));
         if (!transA || !colA) continue;
 
-        // Bordes
+        // Restricción de bordes de pantalla
         float x = std::get<0>(transA->Position);
         float y = std::get<1>(transA->Position);
         
@@ -171,7 +171,7 @@ void CollisionSystem::Update(World& world, float dt)
         if (x > WindowWidth - 64) { std::get<0>(transA->Position) = WindowWidth - 64; std::get<0>(transA->Velocity) *= -1; }
         if (y > WindowHeight - 64) { std::get<1>(transA->Position) = WindowHeight - 64; std::get<1>(transA->Velocity) *= -1; }
 
-        // Entidades
+        // Resolución de colisiones entidad vs entidad
         for (auto& entB : entities) {
             if (entA.get() == entB.get()) continue;
             auto colB = static_cast<ColliderComponent*>(entB->GetComponent("Collider"));
@@ -183,6 +183,7 @@ void CollisionSystem::Update(World& world, float dt)
                 bool hitEnemy = isPlayer && entB->GetComponent("Enemy") != nullptr;
 
                 if (hitBarrier || hitEnemy) {
+                    // Algoritmo Push Out: empujar fuera del objeto en el eje de menor penetración
                     float dx = std::get<0>(colA->MidPoint) - std::get<0>(colB->MidPoint);
                     float dy = std::get<1>(colA->MidPoint) - std::get<1>(colB->MidPoint);
 
@@ -201,6 +202,7 @@ void CollisionSystem::Update(World& world, float dt)
 
                     if (hitEnemy) {
                         world.Emit(DamageEvent());
+                        // Empuje extra fuerte al recibir daño para feedback visual
                         float push = 50.0f;
                         if (ox < oy) std::get<0>(transA->Position) += (dx > 0 ? push : -push);
                         else         std::get<1>(transA->Position) += (dy > 0 ? push : -push);
@@ -211,14 +213,13 @@ void CollisionSystem::Update(World& world, float dt)
     }
 }
 
-// ========================
 // DAMAGE SYSTEM
-// ========================
 DamageSystem::DamageSystem() {
     EventBus::Instance().Suscribe("DamageEvent", [&](Event* e) { pendingDamage = true; });
 }
 
 void DamageSystem::Update(World& world, float dt) {
+    // Reducción constante del cooldown de invencibilidad
     for (auto& ent : world.GetEntities()) {
         if (ent->GetComponent("Player")) {
             auto health = static_cast<HealthComponent*>(ent->GetComponent("Health"));
@@ -226,10 +227,12 @@ void DamageSystem::Update(World& world, float dt) {
         }
     }
 
+    // Procesamiento del evento de daño
     if (pendingDamage) {
         for (auto& ent : world.GetEntities()) {
             if (ent->GetComponent("Player")) {
                 auto health = static_cast<HealthComponent*>(ent->GetComponent("Health"));
+                // Solo aplicar daño si no es invencible
                 if (health && health->Cooldown <= 0) {
                     health->Hp -= 1;
                     health->Cooldown = 1.5f; 
@@ -241,9 +244,7 @@ void DamageSystem::Update(World& world, float dt) {
     }
 }
 
-// ========================
-// RENDER SYSTEM (UI MEJORADA)
-// ========================
+// RENDER SYSTEM (UI & EFECTOS)
 RenderSystem::RenderSystem(SDL_Renderer* r, float w, float h, TTF_Font* font) 
     : Renderer(r), WindowWidth(w), WindowHeight(h), GameFont(font) {}
 
@@ -266,7 +267,7 @@ void RenderSystem::Update(World& world, float dt)
             destRect.w = w;
             destRect.h = h;
 
-            // Rotación visual
+            // Cálculo de rotación visual basada en movimiento
             double angle = 0.0;
             float vx = std::get<0>(transform->Velocity);
             float vy = std::get<1>(transform->Velocity);
@@ -274,7 +275,7 @@ void RenderSystem::Update(World& world, float dt)
                 angle = (std::atan2(vy, vx) * 180.0 / M_PI) + 90.0;
             }
 
-            // Parpadeo
+            // Efecto de parpadeo durante invencibilidad
             if (health && health->Cooldown > 0) {
                 if (static_cast<int>(health->Cooldown * 20.0f) % 2 == 0) 
                      SDL_SetTextureAlphaMod(sprite->Texture, 100);
@@ -286,21 +287,26 @@ void RenderSystem::Update(World& world, float dt)
             SDL_RenderTextureRotated(Renderer, sprite->Texture, nullptr, &destRect, angle, nullptr, SDL_FLIP_NONE);
             SDL_SetTextureAlphaMod(sprite->Texture, 255);
 
-            // --- UI BARRA DE VIDA ---
+            // INTERFAZ DE USUARIO
+
+            // Barra de Vida sobre el jugador
             if (entity->GetComponent("Player") && health) {
                 float barW = 64.0f; float barH = 6.0f;
                 float barX = destRect.x + (destRect.w - barW)/2;
                 float barY = destRect.y - 20;
                 
-                SDL_SetRenderDrawColor(Renderer, 255, 0, 0, 255); // Rojo
+                // Fondo rojo
+                SDL_SetRenderDrawColor(Renderer, 255, 0, 0, 255);
                 SDL_FRect bg = {barX, barY, barW, barH};
                 SDL_RenderFillRect(Renderer, &bg);
 
+                // Barra verde proporcional
                 float hpPct = std::max(0.0f, (float)health->Hp / (float)health->MaxHp);
-                SDL_SetRenderDrawColor(Renderer, 0, 255, 0, 255); // Verde
+                SDL_SetRenderDrawColor(Renderer, 0, 255, 0, 255);
                 SDL_FRect fg = {barX, barY, barW * hpPct, barH};
                 SDL_RenderFillRect(Renderer, &fg);
 
+                // Texto de HP
                 if (GameFont) {
                     std::string hpTxt = "HP: " + std::to_string(health->Hp);
                     SDL_Color col = {255,255,255,255};
@@ -314,7 +320,7 @@ void RenderSystem::Update(World& world, float dt)
                 }
             }
 
-            // --- UI ENEMIGOS ---
+            // Etiqueta de Rol sobre enemigos
             if (enemy && GameFont) {
                 std::string rTxt = (enemy->role == EnemyRole::CHASER) ? "CHASER" : "FLANKER";
                 SDL_Color col = {255, 200, 0, 255};
@@ -331,17 +337,20 @@ void RenderSystem::Update(World& world, float dt)
         }
     }
 
-    // --- GAME OVER ---
+    // PANTALLA DE GAME OVER 
     if (TooBad) {
+        // Fondo oscuro semitransparente
         SDL_SetRenderDrawBlendMode(Renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(Renderer, 20, 0, 0, 220);
         SDL_FRect screen = {0, 0, WindowWidth, WindowHeight};
         SDL_RenderFillRect(Renderer, &screen);
         
+        // Mensaje principal
         SDL_SetRenderDrawColor(Renderer, 255, 50, 50, 255);
         SDL_SetRenderScale(Renderer, 4.0f, 4.0f);
         SDL_RenderDebugText(Renderer, (WindowWidth/4 - 80)/2, (WindowHeight/4 - 20)/2, "GAME OVER");
         
+        // Mensaje de tiempo sobrevivido
         SDL_SetRenderDrawColor(Renderer, 255, 255, 255, 255);
         SDL_SetRenderScale(Renderer, 2.0f, 2.0f);
         std::string msg = "Survived: " + std::to_string((int)world.TimeElapsed) + "s";
@@ -350,9 +359,7 @@ void RenderSystem::Update(World& world, float dt)
     }
 }
 
-// ========================
 // SPAWN & TIMER
-// ========================
 SpawnSystem::SpawnSystem(SDL_Renderer* r) : Renderer(r) {
     EventBus::Instance().Suscribe("SpawnEvent", [&](Event* e) { pendingSpawn = true; });
 }

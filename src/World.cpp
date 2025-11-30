@@ -3,13 +3,11 @@
 #include <chrono>
 #include <iostream>
 
-// =====================================================
-// LÓGICA DEL HILO DE INTELIGENCIA ARTIFICIAL (CEREBRO)
-// =====================================================
+// Función que ejecuta el hilo de IA para cada enemigo
 void EnemyAI_Loop(EnemyComponent* self, TransformComponent* myTrans, TransformComponent* playerTrans) {
     while (self->threadActive) {
         if (playerTrans && myTrans) {
-            // 1. Obtener posiciones
+            // Lectura de posiciones actuales
             float pX = std::get<0>(playerTrans->Position);
             float pY = std::get<1>(playerTrans->Position);
             
@@ -19,51 +17,46 @@ void EnemyAI_Loop(EnemyComponent* self, TransformComponent* myTrans, TransformCo
             float destX = pX;
             float destY = pY;
 
-            // 2. TOMA DE DECISIONES
+            // Estrategia según rol asignado
             if (self->role == EnemyRole::CHASER) {
-                // Perseguidor: Va directo siempre
+                // Persecución directa a la posición del jugador
                 destX = pX;
                 destY = pY;
             } 
             else if (self->role == EnemyRole::FLANKER) {
-                // --- MEJORA: INTELIGENCIA DE CERCANÍA ---
+                // Cálculo de distancia para comportamiento dinámico
                 float dx = pX - myX;
                 float dy = pY - myY;
                 float dist = std::sqrt(dx*dx + dy*dy);
 
-                // Si el jugador está MUY CERCA (< 300 px), ¡ATACAR!
-                // Ya no "huyen" para rodear, sino que van a por ti.
+                // Si está muy cerca, ataca; si no, flanquea
                 if (dist < 300.0f) {
                     destX = pX;
                     destY = pY;
                 } 
                 else {
-                    // Si están lejos, siguen con su estrategia de rodear
+                    // Intenta posicionarse a los costados del jugador
                     bool goRight = (reinterpret_cast<uintptr_t>(self) % 2 == 0);
-                    float offset = 350.0f; // Abren más el círculo
+                    float offset = 350.0f; 
                     
                     if (goRight) destX += offset;
                     else         destX -= offset;
                     
-                    // Intentan predecir un poco tu altura o quedarse un poco atrás
                     destY += 100.0f; 
                 }
             }
 
-            // 3. COMUNICACIÓN
+            // Actualización atómica de coordenadas objetivo
             self->targetX = destX;
             self->targetY = destY;
         }
 
-        // Pequeña pausa para no saturar CPU
+        // Pausa para simular tiempo de reacción y liberar CPU
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }
 
-// =====================================================
-// IMPLEMENTACIÓN DE WORLD
-// =====================================================
-
+// Inicialización del mundo
 World::World() {
     enemycounter = 0;
     TimeElapsed = 0.0f;
@@ -71,13 +64,14 @@ World::World() {
 
 World::~World() {}
 
+// Creación de enemigo con validación de posición y asignación de hilo
 Entity& World::createEntity(SDL_Renderer* renderer){
     auto Information = ReadFromConfigFile("./assets/data.json");
     std::string rutaImagen = std::get<3>(Information);
     float ancho = std::get<5>(Information);
     float alto = std::get<6>(Information);
 
-    // Spawn seguro
+    // Intenta encontrar una posición libre aleatoria
     float PosicionX = 0, PosicionY = 0;
     for(int i=0; i<10; i++) {
         PosicionX = NumberRandomizer(true, 50.0f, 1800.0f);
@@ -92,14 +86,14 @@ Entity& World::createEntity(SDL_Renderer* renderer){
     AddEntity(std::move(Enemy));
     enemycounter++;
 
-    // Componentes
+    // Crea componentes temporales para pasarlos al hilo
     auto transPtr = new TransformComponent(PosicionX, PosicionY, Velocity, Velocity);
     AddComponentToEntity(refEnemy.GetId(), std::unique_ptr<TransformComponent>(transPtr));
     
     AddComponentToEntity(refEnemy.GetId(), std::make_unique<SpriteComponent>(rutaImagen, renderer));
     AddComponentToEntity(refEnemy.GetId(), std::make_unique<ColliderComponent>(ancho, alto, std::pair<float,float>{PosicionX + ancho/2, PosicionY + alto/2}));
     
-    // IA y Hilo
+    // Asigna rol aleatorio y lanza el hilo de IA
     EnemyRole rol = (NumberRandomizer(true, 0, 100) < 50) ? EnemyRole::CHASER : EnemyRole::FLANKER;
     auto enemyCompPtr = new EnemyComponent(rol);
     
@@ -119,6 +113,7 @@ Entity& World::createEntity(SDL_Renderer* renderer){
     return refEnemy;
 }
 
+// Algoritmo de detección de espacio vacío (AABB)
 bool World::IsAreaFree(float x, float y, float w, float h) {
     float myLeft = x; float myRight = x + w;
     float myTop = y; float myBottom = y + h;
@@ -135,6 +130,7 @@ bool World::IsAreaFree(float x, float y, float w, float h) {
     return true; 
 }
 
+// Métodos estándar de gestión de ECS
 void World::Emit(const Event& event) {
     EventBus::Instance().Enqueue(std::make_unique<Event>(event));
 }

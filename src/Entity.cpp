@@ -2,6 +2,7 @@
 
 int Entity::cantidad = 0;
 
+// Constructor por defecto con ID autogenerado
 Entity::Entity()
 {
     Id = "Entity_" + std::to_string(cantidad);
@@ -11,6 +12,7 @@ Entity::Entity()
 Entity::~Entity() {
 }
 
+// Constructor con nombre personalizado
 Entity::Entity(std::string name)
     : Name(name)
 {
@@ -18,16 +20,17 @@ Entity::Entity(std::string name)
     cantidad++;
 }
 
+// Agrega un componente a la lista de la entidad
 void Entity::AddComponent(std::unique_ptr<Component> component)
 {
     components.push_back(std::move(component));
 }
 
+// Busca y devuelve un componente por su tipo (string)
 Component* Entity::GetComponent(std::string type)
 {
     for (const std::unique_ptr<Component>& c : components)
     {
-        // Comparamos el Component::Type (string) con el string solicitado
         if (c->Type == type)
         {
             return c.get();
