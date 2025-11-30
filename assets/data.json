@@ -1,0 +1,10 @@
+{
+  "cantidad" : 6,
+  "ubicacion_imagen_character" : "./assets/CharSprite.png",
+  "ubicacion_imagen_background" : "./assets/StarBackground.png",
+  "ubicacion_imagen_enemy" : "./assets/EnemySprite.png",
+  "ubicacion_imagen_barrier" : "./assets/BarrierSprite.png",
+  "ancho" : 64,
+  "alto" : 64,
+  "interval" : 5
+}
