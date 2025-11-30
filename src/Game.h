@@ -23,6 +23,7 @@ class Game{
         std::unique_ptr<DamageSystem> damagesystem;
         std::unique_ptr<SpawnSystem> spawnsystem;
         std::unique_ptr<TimerSystem> timersystem;
+        SDL_Texture* textureBackground = nullptr;
 
         int cantidad;
         std::string rutaImagenCharacter;

@@ -42,6 +42,14 @@ void Game::Initialize()
         spdlog::error("Error obteniendo renderer SDL");
     }
 
+    SDL_Surface* surfacefondo = IMG_Load(rutaImagenBackground.c_str());
+    if (surfacefondo) {
+        this->textureBackground = SDL_CreateTextureFromSurface(this->renderer, surfacefondo);
+        SDL_DestroySurface(surfacefondo);
+    } else {
+        spdlog::error("No se pudo cargar el fondo");
+    }
+
     //Inicialización de sistemas
     this->movementsystem = std::make_unique<MovementSystem>();
     this->playerinputsystem = std::make_unique<PlayerInputSystem>(this->isRunning);
@@ -72,76 +80,85 @@ void Game::Run()
 
 void Game::Start()
 {
-    //Lectura del Json y agarre de sus datos
+    // Lectura del Json y agarre de sus datos
     std::tuple<int, std::string, std::string, std::string, std::string, float, float, float> Information = ReadFromConfigFile("./assets/data.json");
     float ancho = std::get<5>(Information);
-    float alto= std::get<6>(Information);
+    float alto = std::get<6>(Information);
+    
+    // Configuración inicial del Jugador
     float PosicionX = 960.f;
     float PosicionY = 1000.f;
     float VelocityX = 0.f;
     float VelocityY = 0.f;
     int HealthPoints = 3;
     
+    // CREAR JUGADOR (Primero, para que ocupe espacio en el mundo)
     std::unique_ptr<Entity> Character = std::make_unique<Entity>("Player_" + std::to_string(0));
     Entity& refCharacter = *Character;
     this->world.AddEntity(std::move(Character));
 
-    this->world.AddComponentToEntity(refCharacter.GetId(),std::unique_ptr<TransformComponent>(new TransformComponent(PosicionX, PosicionY, VelocityX, VelocityY)));
-
+    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<TransformComponent>(new TransformComponent(PosicionX, PosicionY, VelocityX, VelocityY)));
     this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent(rutaImagenCharacter, renderer)));
-
-    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, std::pair<float,float>{PosicionX + ancho/2, PosicionY - alto/2})));
-
+    this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, std::pair<float,float>{PosicionX + ancho/2, PosicionY - alto/2}))); // Ajustar collider al centro si es necesario
     this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<HealthComponent>(new HealthComponent(HealthPoints)));
-
     this->world.AddComponentToEntity(refCharacter.GetId(), std::unique_ptr<PlayerComponent>(new PlayerComponent()));
 
+    // GENERACIÓN PROCEDIMENTAL DE BARRERAS
     int BarrierCounter = 0;
-    #warning Revisar el collssion system después de esto
+    
+    // Recorremos la pantalla en cuadrícula
     for (size_t j = 64; j < std::get<1>(this->AnchoAlto) - 64; j = j + 64)
     {
         for (size_t i = 64; i < std::get<0>(this->AnchoAlto); i = i + 64) 
         {
+            // Probabilidad baja de iniciar una pared aquí
             float BarrierProbability = NumberRandomizer(true, 0.f, 100.f);
             if (BarrierProbability < 5.f) 
             {
                 int direction = NumberRandomizer(false, 0, 3);
-                int count = NumberRandomizer(false, 3, 6);
-                float PositionX = i;
-                float PositionY = j;
+                int count = NumberRandomizer(false, 3, 6); // Longitud de la pared
+                
+                float CurrentX = i;
+                float CurrentY = j;
                 int OffsetX = 0;
                 int OffsetY = 0;
+
+                // Definir dirección de crecimiento
                 switch (direction) 
-                    {
-                        case 0:
-                            OffsetX = 64;
-                            break;
-                        case 1:
-                            OffsetY = 64;
-                            break;
-                        case 2:
-                            OffsetX = -64;
-                            break;
-                        case 3:
-                            OffsetY = -64;
-                            break;
-                    }
+                {
+                    case 0: OffsetX = 64; break; // Derecha
+                    case 1: OffsetY = 64; break; // Abajo
+                    case 2: OffsetX = -64; break; // Izquierda
+                    case 3: OffsetY = -64; break; // Arriba
+                }
+
+                // Generar los bloques de la pared
                 for (int k = 0; k < count; k++) 
                 {
-                    std::unique_ptr<Entity> Barrier = std::make_unique<Entity>("Barrier_" + std::to_string(BarrierCounter));
-                    Entity& refBarrier = *Barrier;
-                    this->world.AddEntity(std::move(Barrier));
+                    // --- CORRECCIÓN CLAVE: Verificar si el espacio está libre ---
+                    // Solo creamos la barrera si NO choca con el jugador u otra barrera
+                    if (this->world.IsAreaFree(CurrentX, CurrentY, ancho, alto))
+                    {
+                        std::unique_ptr<Entity> Barrier = std::make_unique<Entity>("Barrier_" + std::to_string(BarrierCounter));
+                        Entity& refBarrier = *Barrier;
+                        this->world.AddEntity(std::move(Barrier));
+                        
+                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<TransformComponent>(new TransformComponent(CurrentX, CurrentY, 0, 0)));
+                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent(rutaImagenBarrier, renderer)));
+                        
+                        // Centrar el Collider correctamente respecto a la posición (asumiendo origen top-left)
+                        float midX = CurrentX + ancho / 2.0f;
+                        float midY = CurrentY + alto / 2.0f; 
+                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, std::pair<float,float>{midX, midY})));
+                        
+                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<BarrierComponent>(new BarrierComponent()));
+                        
+                        BarrierCounter++;
+                    }
                     
-                    this->world.AddComponentToEntity(refBarrier.GetId(),std::unique_ptr<TransformComponent>(new TransformComponent(PositionX, PositionY, 0, 0)));
-
-                    this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent(rutaImagenBarrier, renderer)));
-
-                    this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, std::pair<float,float>{PositionX + ancho/2, PositionY - alto/2})));
-
-                    this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<BarrierComponent>(new BarrierComponent()));
-                    PositionX = PositionX + OffsetX;
-                    PositionY = PositionY + OffsetY;
-                    BarrierCounter++;
+                    // Mover al siguiente bloque (incluso si no se pudo poner el actual, intentamos el siguiente)
+                    CurrentX += OffsetX;
+                    CurrentY += OffsetY;
                 }
             }
         }
@@ -165,26 +182,18 @@ void Game::Update(float deltaTime)
 
 void Game::Render(float deltaTime)
 {
-    //Renderer
-    //Contenedores de los objetos
-    //SDL_FRect {nombre del contenedor}{Ubicación en X, Ubicación en Y, Largo, Alto};
-    SDL_FRect rectFondo{0, 0, 1920, 1080}; // Cambiar a relación de cuadrado
-    
-    SDL_Surface* surfacefondo = IMG_Load(rutaImagenBackground.c_str());
-    //Luego crea una textura con ese surface.
-    //SDL_Texture* {nombre de la textura} = SDL_CreateTextureFromSurface(renderer, {nombre del surface});
-    SDL_Texture* texturebackground = SDL_CreateTextureFromSurface(renderer, surfacefondo);
-    //Elimina el surface porque ya no es necesario
-    //SDL_DestroySurface({nombre del surface});
-    SDL_DestroySurface(surfacefondo);
+    // 1. Limpiar pantalla
+    SDL_RenderClear(renderer);
 
-    //Placement de objetos en el respectivo contenedor.
-    //SDL_RenderTexture(renderer, {nombre de la textura}, nullptr, &{nombre del contenedor});
-    SDL_RenderTexture(renderer, texturebackground, nullptr, &rectFondo);
-    
-    // En el futuro se dibujarán las entidades desde world aquí
-    rendersystem->Update(world,deltaTime);
+    // 2. Dibujar Fondo (Usando la textura ya cargada)
+    if (this->textureBackground) {
+        SDL_FRect rectFondo{0, 0, 1920, 1080}; 
+        SDL_RenderTexture(renderer, this->textureBackground, nullptr, &rectFondo);
+    }
 
-    // Renderiza todo lo que has dibujado
+    // 3. Dibujar Entidades (Aquí incluimos la lógica de parpadeo dentro del sistema)
+    rendersystem->Update(world, deltaTime);
+
+    // 4. Mostrar
     SDL_RenderPresent(renderer);
 }

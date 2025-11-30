@@ -1,10 +1,25 @@
 #include "ISystem.h"    
+#include <cmath>
 
 bool ISystem::TooBad = false;
 ISystem::ISystem() {
 }
 
 ISystem::~ISystem() {
+}
+
+bool CheckCollision(ColliderComponent* a, ColliderComponent* b, float& overlapX, float& overlapY) {
+    float dx = std::get<0>(a->MidPoint) - std::get<0>(b->MidPoint);
+    float dy = std::get<1>(a->MidPoint) - std::get<1>(b->MidPoint);
+    float combinedHalfW = (std::get<0>(a->Bounds) + std::get<0>(b->Bounds)) / 2.0f;
+    float combinedHalfH = (std::get<1>(a->Bounds) + std::get<1>(b->Bounds)) / 2.0f;
+
+    if (std::abs(dx) < combinedHalfW && std::abs(dy) < combinedHalfH) {
+        overlapX = combinedHalfW - std::abs(dx);
+        overlapY = combinedHalfH - std::abs(dy);
+        return true;
+    }
+    return false;
 }
 
 //Sistema de input del teclado del jugador
@@ -78,60 +93,54 @@ MovementSystem::MovementSystem()
 }
 void MovementSystem::Update(World& world, float dt)
 {
-    if (TooBad)
+    // AQUI PONER LOGICA DE IA SIMPLIFICADA (O mover a un EnemySystem aparte)
+    // Para que los enemigos te sigan antes de aplicar el movimiento:
+    Entity* player = world.GetEntityById("Player_0"); // Asegúrate de tener una forma de obtener al player
+    TransformComponent* playerTrans = nullptr;
+    if(player) playerTrans = static_cast<TransformComponent*>(player->GetComponent("TransformComponent"));
+
+    for (auto& entity : world.GetEntities()) 
     {
-        return;
-    }
-    for (const std::unique_ptr<Entity>& Character : world.GetEntities())
-    {
-        Component* c_base_coll = Character->GetComponent("Collider");
-        ColliderComponent* c_coll = static_cast<ColliderComponent*>(c_base_coll);
-        Component* c_base_trans = Character->GetComponent("Transform");
-        TransformComponent* c_trans = static_cast<TransformComponent*>(c_base_trans);
-        if(Character->GetComponent("Player"))
-        {
-            for (const std::unique_ptr<Entity>& Character2 : world.GetEntities())
-            {
-                if(Character2->GetComponent("Enemy"))
-                {
-                    Component* c2_base_trans = Character2->GetComponent("Transform");
-                    TransformComponent* c2_trans = static_cast<TransformComponent*>(c2_base_trans);
-                    float distancebetweenX = std::get<0>(c_trans->Position) - std::get<0>(c2_trans->Position);
-                    float distancebetweenY = std::get<1>(c_trans->Position) - std::get<1>(c2_trans->Position);
-                    float EPS = 1.f;
-                    if (c2_trans->BouncingTimer > 0.f)
-                    {
-                        c2_trans->BouncingTimer--;
-                        continue;
-                    }
-                    if (distancebetweenX != 0)
-                    {
-                        float direcX = (distancebetweenX)/std::abs(distancebetweenX);
-                        std::get<0>(c2_trans->Velocity) = std::abs(std::get<0>(c2_trans->BaseVelocity)) * direcX;
-                    }
-                    if (distancebetweenY != 0)
-                    {
-                        float direcY = (distancebetweenY)/std::abs(distancebetweenY);
-                        std::get<1>(c2_trans->Velocity) = std::abs(std::get<1>(c2_trans->BaseVelocity)) * direcY;
-                    }
-                    if (std::abs(distancebetweenX) < EPS)
-                    {
-                        std::get<0>(c2_trans->Velocity) = 0;
-                    }
-                    if (std::abs(distancebetweenY) < EPS)
-                    {
-                        std::get<1>(c2_trans->Velocity) = 0;
-                    }
-                }
+        // 1. Lógica de Persecución (IA Simple integrada aquí por ahora)
+        if (playerTrans && entity->GetComponent("EnemyComponent")) {
+            auto enemyTrans = static_cast<TransformComponent*>(entity->GetComponent("TransformComponent"));
+            float dx = std::get<0>(playerTrans->Position) - std::get<0>(enemyTrans->Position);
+            float dy = std::get<1>(playerTrans->Position) - std::get<1>(enemyTrans->Position);
+            
+            // Normalizar dirección
+            float length = std::sqrt(dx*dx + dy*dy);
+            if (length > 0) {
+                float speed = 100.0f; // Velocidad de los enemigos
+                std::get<0>(enemyTrans->Velocity) = (dx / length) * speed;
+                std::get<1>(enemyTrans->Velocity) = (dy / length) * speed;
             }
         }
-        float distanciaX = std::get<0>(c_trans->Velocity) * dt;
-        float distanciaY = std::get<1>(c_trans->Velocity) * dt;
-        std::get<0>(c_trans->Position) = std::get<0>(c_trans->Position) + distanciaX;
-        std::get<1>(c_trans->Position) = std::get<1>(c_trans->Position) + distanciaY;
-        std::get<0>(c_coll->MidPoint) = std::get<0>(c_coll->MidPoint) + distanciaX;
-        std::get<1>(c_coll->MidPoint) = std::get<1>(c_coll->MidPoint) + distanciaY; 
-    }
+
+        // 2. Lógica Física de Movimiento (APLICAR VELOCIDAD)
+        auto transform = entity->GetComponent("TransformComponent");
+        auto collider = entity->GetComponent("ColliderComponent");
+
+        if (transform) 
+        {
+            TransformComponent* trans = static_cast<TransformComponent*>(transform);
+            
+            // Mover posición basado en velocidad y tiempo
+            std::get<0>(trans->Position) += std::get<0>(trans->Velocity) * dt;
+            std::get<1>(trans->Position) += std::get<1>(trans->Velocity) * dt;
+
+            // SINCRONIZAR COLLIDER (ESTO FALTABA Y ES CLAVE)
+            if (collider) {
+                ColliderComponent* col = static_cast<ColliderComponent*>(collider);
+                // Asumiendo que Position es la esquina superior izquierda
+                float w = std::get<0>(col->Bounds);
+                float h = std::get<1>(col->Bounds);
+                col->MidPoint = {
+                    std::get<0>(trans->Position) + w / 2.0f,
+                    std::get<1>(trans->Position) + h / 2.0f
+                };
+            }
+        }
+    }   
 }
 
 //Sistema de renderizado del jugador, los enemigos y el timer
@@ -143,58 +152,47 @@ RenderSystem::RenderSystem(SDL_Renderer* renderer, float windowwidth, float wind
 }
 void RenderSystem::Update(World& world, float dt)
 {
-    if (TooBad)
+    for (auto& entity : world.GetEntities()) 
     {
-        std::string timeText = "Time:" + std::to_string(world.TimeElapsed);
-
-        float rectWidth = 400.f;
-        float rectHeight = 80.f;
-
-        float rectX = WindowWidth / 2.f - rectWidth / 2.f;
-        float rectY = WindowHeight / 2.f - rectHeight / 2.f;
-
-        SDL_SetRenderDrawColor(Renderer, 0, 0, 0, 0);
-        SDL_FRect debugBg{rectX, rectY, rectWidth, rectHeight};
-        SDL_RenderFillRect(Renderer, &debugBg);
-
-        SDL_SetRenderDrawColor(Renderer, 255, 255, 255, 255);
-        SDL_SetRenderScale(Renderer, 4.0f, 4.0f);
-
-        SDL_RenderDebugText(Renderer, rectX  / 4.f, rectY / 4.f, timeText.c_str());
-
-        SDL_SetRenderScale(Renderer, 1.0f, 1.0f);
-    }
-    else
-    {
-        for (const std::unique_ptr<Entity>& Character : world.GetEntities())
+        auto sprite = entity->GetComponent("SpriteComponent");
+        auto transform = entity->GetComponent("TransformComponent");
+        
+        if (sprite && transform) 
         {
-            Component* c1_base_coll = Character->GetComponent("Collider");
-            ColliderComponent* c1_coll = static_cast<ColliderComponent*>(c1_base_coll);
-            Component* c1_base_trans = Character->GetComponent("Transform");
-            TransformComponent* c1_trans = static_cast<TransformComponent*>(c1_base_trans);
-            Component* c1_base_spr = Character->GetComponent("Sprite");
-            SpriteComponent* c1_spr = static_cast<SpriteComponent*>(c1_base_spr);
+            SpriteComponent* spr = static_cast<SpriteComponent*>(sprite);
+            TransformComponent* trans = static_cast<TransformComponent*>(transform);
+            
+            SDL_FRect destRect;
+            destRect.x = std::get<0>(trans->Position);
+            destRect.y = std::get<1>(trans->Position);
+            
+            // Consultar tamaño textura
+            float w, h;
+            SDL_GetTextureSize(spr->Texture, &w, &h);
+            destRect.w = w;
+            destRect.h = h;
 
-            SDL_FRect rectMegaman{std::get<0>(c1_trans->Position), std::get<1>(c1_trans->Position), std::get<0>(c1_coll->Bounds), std::get<1>(c1_coll->Bounds)};
-            double angle = (std::atan2(std::get<1>(c1_trans->Velocity), std::get<0>(c1_trans->Velocity)) * 180.0 / M_PI) + 90.0;
-            SDL_RenderTextureRotated(Renderer, c1_spr->Texture, nullptr, &rectMegaman,angle ,nullptr,SDL_FLIP_NONE);
-            SDL_SetRenderDrawColor(Renderer, 255, 0, 0, 255);
-            SDL_FRect rectCollider{
-                c1_coll->getLeft(),
-                c1_coll->getBottom(),
-                std::get<0>(c1_coll->Bounds),
-                std::get<1>(c1_coll->Bounds)
-            };
-            SDL_RenderRect(Renderer, &rectCollider);
+            // Lógica de parpadeo si tiene vida y cooldown
+            auto health = entity->GetComponent("HealthComponent");
+            if (health) {
+                HealthComponent* hp = static_cast<HealthComponent*>(health);
+                if (hp->Cooldown > 0) {
+                    // Parpadeo rápido
+                    if ((int)(hp->Cooldown * 10) % 2 == 0) {
+                        SDL_SetTextureAlphaMod(spr->Texture, 128); // Semitransparente
+                    } else {
+                        SDL_SetTextureAlphaMod(spr->Texture, 255);
+                    }
+                } else {
+                    SDL_SetTextureAlphaMod(spr->Texture, 255);
+                }
+            }
+
+            SDL_RenderTexture(Renderer, spr->Texture, nullptr, &destRect);
+            
+            // Restaurar Alpha por si acaso
+            SDL_SetTextureAlphaMod(spr->Texture, 255);
         }
-        std::string timeText = "Time:" + std::to_string(world.TimeElapsed);
-
-        SDL_SetRenderDrawColor(Renderer, 0, 0, 0, 0);
-        SDL_FRect debugBg{ 20, 20, 240, 40 };
-        SDL_RenderFillRect(Renderer, &debugBg);
-
-        SDL_SetRenderDrawColor(Renderer, 255, 255, 255, 255);
-        SDL_RenderDebugText(Renderer, 30, 30, timeText.c_str());
     }
 }
 
@@ -205,67 +203,70 @@ CollisionSystem::CollisionSystem(int windowwidth, int windowheight){
 }
 void CollisionSystem::Update(World& world, float dt)
 {
-    if (TooBad)
+    auto& entities = world.GetEntities();
+
+    // Solo chequeamos entidades dinámicas (Jugador y Enemigos)
+    for (auto& entityA : entities) 
     {
-        return;
-    }
-    for (const std::unique_ptr<Entity>& Character : world.GetEntities())
-    {
-        Component* c1_base_coll = Character->GetComponent("Collider");
-        ColliderComponent* c1_coll = static_cast<ColliderComponent*>(c1_base_coll);
-        Component* c1_base_trans = Character->GetComponent("Transform");
-        TransformComponent* c1_trans = static_cast<TransformComponent*>(c1_base_trans);
-        if(Character->GetComponent("Player")){
-            for (const std::unique_ptr<Entity>& Character2 : world.GetEntities())
+        bool isPlayer = entityA->GetComponent("PlayerComponent") != nullptr;
+        bool isEnemy = entityA->GetComponent("EnemyComponent") != nullptr;
+        
+        if (!isPlayer && !isEnemy) continue; // Si es pared, saltar
+
+        auto transA = static_cast<TransformComponent*>(entityA->GetComponent("TransformComponent"));
+        auto colA = static_cast<ColliderComponent*>(entityA->GetComponent("ColliderComponent"));
+
+        if (!transA || !colA) continue;
+
+        // Limites de pantalla (Rebote simple)
+        float x = std::get<0>(transA->Position);
+        float y = std::get<1>(transA->Position);
+        float w = std::get<0>(colA->Bounds);
+        float h = std::get<1>(colA->Bounds);
+
+        if (x < 0) { std::get<0>(transA->Position) = 0; std::get<0>(transA->Velocity) *= -1; }
+        if (y < 0) { std::get<1>(transA->Position) = 0; std::get<1>(transA->Velocity) *= -1; }
+        if (x + w > WindowWidth) { std::get<0>(transA->Position) = WindowWidth - w; std::get<0>(transA->Velocity) *= -1; }
+        if (y + h > WindowHeight) { std::get<1>(transA->Position) = WindowHeight - h; std::get<1>(transA->Velocity) *= -1; }
+
+        // Colisiones con otros objetos
+        for (auto& entityB : entities) 
+        {
+            if (entityA.get() == entityB.get()) continue;
+
+            auto colB = static_cast<ColliderComponent*>(entityB->GetComponent("ColliderComponent"));
+            if (!colB) continue;
+
+            float ox = 0, oy = 0;
+            if (CheckCollision(colA, colB, ox, oy)) 
             {
-                if(Character2->GetComponent("Enemy"))
+                // CHOQUE CON BARRERA (RESOLUCIÓN FÍSICA)
+                if (entityB->GetComponent("BarrierComponent")) 
                 {
-                    Component* c2_base_coll = Character2->GetComponent("Collider");
-                    ColliderComponent* c2_coll = static_cast<ColliderComponent*>(c2_base_coll);
-                    if (c1_coll->Collision(c2_coll))
-                    {
-                        world.Emit(DamageEvent());
+                    // Calcular vector dirección desde B hacia A
+                    float dx = std::get<0>(colA->MidPoint) - std::get<0>(colB->MidPoint);
+                    float dy = std::get<1>(colA->MidPoint) - std::get<1>(colB->MidPoint);
+
+                    if (ox < oy) { // Corregir en X
+                        if (dx > 0) std::get<0>(transA->Position) += ox;
+                        else        std::get<0>(transA->Position) -= ox;
+                        std::get<0>(transA->Velocity) *= -1; // Rebote
+                    } else { // Corregir en Y
+                        if (dy > 0) std::get<1>(transA->Position) += oy;
+                        else        std::get<1>(transA->Position) -= oy;
+                        std::get<1>(transA->Velocity) *= -1; // Rebote
                     }
+                    
+                    // Actualizar Collider tras mover
+                    colA->MidPoint = {
+                        std::get<0>(transA->Position) + w/2.0f,
+                        std::get<1>(transA->Position) + h/2.0f
+                    };
                 }
-                if(Character2->GetComponent("Barrier"))
-                {
-                    Component* c2_base_coll = Character2->GetComponent("Collider");
-                    ColliderComponent* c2_coll = static_cast<ColliderComponent*>(c2_base_coll);
-                    if (c1_coll->Collision(c2_coll))
-                    {
-                        std::get<0>(c1_trans->Velocity) = std::get<0>(c1_trans->Velocity) * -1.0f;
-                        std::get<1>(c1_trans->Velocity) = std::get<1>(c1_trans->Velocity) * -1.0f;
-                        world.Emit(DamageEvent());
-                        break;
-                    }
+                // CHOQUE JUGADOR - ENEMIGO
+                else if (isPlayer && entityB->GetComponent("EnemyComponent")) {
+                    world.Emit(DamageEvent());
                 }
-            }
-        }
-        if(Character->GetComponent("Enemy")){
-            for (const std::unique_ptr<Entity>& Character2 : world.GetEntities())
-            {
-                if(Character2->GetComponent("Barrier"))
-                {
-                    Component* c2_base_coll = Character2->GetComponent("Collider");
-                    ColliderComponent* c2_coll = static_cast<ColliderComponent*>(c2_base_coll);
-                    if (c1_coll->Collision(c2_coll))
-                    {
-                        std::get<0>(c1_trans->Velocity) = std::get<0>(c1_trans->Velocity) * -1.f;
-                        std::get<1>(c1_trans->Velocity) = std::get<1>(c1_trans->Velocity) * -1.f;
-                        c1_trans->BouncingTimer = 8.f;
-                        break;
-                    }
-                }
-            }
-        }
-        if(!Character->GetComponent("Barrier")){
-            if (std::get<0>(c1_trans->Position) >= WindowWidth - std::get<0>(c1_coll->Bounds) || std::get<0>(c1_trans->Position) <= 0)
-            {
-                std::get<0>(c1_trans->Velocity) = std::get<0>(c1_trans->Velocity) * -1.0f;
-            }
-            else if (std::get<1>(c1_trans->Position) >= WindowHeight - std::get<1>(c1_coll->Bounds) || std::get<1>(c1_trans->Position) <= 0)
-            {
-                std::get<1>(c1_trans->Velocity) = std::get<1>(c1_trans->Velocity) * -1.0f;
             }
         }
     }

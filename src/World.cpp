@@ -85,3 +85,37 @@ Entity* World::GetEntityById(const std::string& Id) {
 std::vector<std::unique_ptr<Entity>>& World::GetEntities() {
     return entities;
 }
+
+bool World::IsAreaFree(float x, float y, float w, float h) 
+{
+    float newLeft = x;
+    float newRight = x + w;
+    float newTop = y;
+    float newBottom = y + h;
+
+    for (auto& entity : entities) {
+        auto collider = entity->GetComponent("ColliderComponent");
+        if (!collider) continue;
+        
+        // Obtener posición actual del collider existente
+        // Asumiendo que guardas Bounds en el collider
+        ColliderComponent* col = static_cast<ColliderComponent*>(collider);
+        
+        // Calcular sus bordes (AABB) basado en MidPoint y Bounds
+        float halfW = std::get<0>(col->Bounds) / 2.0f;
+        float halfH = std::get<1>(col->Bounds) / 2.0f;
+        float existLeft = std::get<0>(col->MidPoint) - halfW;
+        float existRight = std::get<0>(col->MidPoint) + halfW;
+        float existTop = std::get<1>(col->MidPoint) - halfH;
+        float existBottom = std::get<1>(col->MidPoint) + halfH;
+
+        // Verificar intersección
+        bool collisionX = newLeft < existRight && newRight > existLeft;
+        bool collisionY = newTop < existBottom && newBottom > existTop;
+
+        if (collisionX && collisionY) {
+            return false; // Está ocupado
+        }
+    }
+    return true; // Está libre
+}

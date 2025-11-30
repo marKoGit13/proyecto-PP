@@ -20,6 +20,8 @@ public:
     World();
     ~World();
 
+    bool IsAreaFree(float x, float y, float w, float h);
+    
     World(const World&) = delete;
     World& operator=(const World&) = delete;
 
