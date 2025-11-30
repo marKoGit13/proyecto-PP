@@ -85,11 +85,31 @@ void Game::Run()
 void Game::Start()
 {
     std::tuple<int, std::string, std::string, std::string, std::string, float, float, float> Information = ReadFromConfigFile("./assets/data.json");
-    float ancho = std::get<5>(Information);
-    float alto= std::get<6>(Information);
-    float PosicionX = 960.f;
-    float PosicionY = 900.f;
-    
+    // Escala global (60%)
+    float scale = 0.6f;
+    float ancho = std::get<5>(Information) * scale;
+    float alto = std::get<6>(Information) * scale;
+
+    // Nave centrada y abajo
+    float PosicionX = (1920.0f / 2.0f) - (ancho / 2.0f);
+    float PosicionY = 1080.0f - 150.0f - alto;
+
+    // LISTA DE LOS 10 SPRITES PARA BARRERAS
+    // Definimos esto aquí para no crearlo mil veces dentro del bucle
+    std::vector<std::string> barrierSprites = {
+        rutaImagenBarrier,              
+        "./assets/BarrierSprite2.png",  
+        "./assets/BarrierSprite3.png",  
+        "./assets/BarrierSprite4.png",  
+        "./assets/BarrierSprite5.png",  
+        "./assets/BarrierSprite6.png",  
+        "./assets/BarrierSprite7.png",  
+        "./assets/BarrierSprite8.png",  
+        "./assets/BarrierSprite9.png",  
+        "./assets/BarrierSprite10.png",
+        "./assets/BarrierSprite11.png"  
+    };
+
     // Creación del jugador
     std::unique_ptr<Entity> Character = std::make_unique<Entity>("Player_0");
     Entity& refCharacter = *Character;
@@ -103,9 +123,10 @@ void Game::Start()
 
     // Generación procedimental de barreras
     int BarrierCounter = 0;
-    for (size_t j = 64; j < std::get<1>(this->AnchoAlto) - 64; j = j + 64)
+    int Margin = 100;
+    for (size_t j = Margin; j < 1080 - Margin; j = j + 64)
     {
-        for (size_t i = 64; i < std::get<0>(this->AnchoAlto); i = i + 64) 
+        for (size_t i = Margin; i < 1920 - Margin; i = i + 64) 
         {
             float BarrierProbability = NumberRandomizer(true, 0.f, 100.f);
             if (BarrierProbability < 5.f) 
@@ -114,20 +135,39 @@ void Game::Start()
                 int count = NumberRandomizer(false, 3, 6);
                 float CurX = i; float CurY = j;
                 int OffX = 0, OffY = 0;
-                switch (direction) { case 0: OffX = 64; break; case 1: OffY = 64; break; case 2: OffX = -64; break; case 3: OffY = -64; break; }
+                
+                // Ajustar offset según el nuevo tamaño escalado 
+                // Multiplicamos por 0.75f para que se superpongan un 25% 
+                int stepW = (int)(ancho * 0.75f); 
+                int stepH = (int)(alto * 0.75f); 
+
+                switch (direction) { 
+                    case 0: OffX = stepW; break; 
+                    case 1: OffY = stepH; break; 
+                    case 2: OffX = -stepW; break; 
+                    case 3: OffY = -stepH; break; 
+                }
                 for (int k = 0; k < count; k++) 
                 {
-                    // Verificación de espacio libre antes de crear muro
-                    if (this->world.IsAreaFree(CurX, CurY, ancho, alto)) {
-                        std::unique_ptr<Entity> Barrier = std::make_unique<Entity>("Barrier_" + std::to_string(BarrierCounter));
-                        Entity& refBarrier = *Barrier;
-                        this->world.AddEntity(std::move(Barrier));
-                        
-                        this->world.AddComponentToEntity(refBarrier.GetId(),std::unique_ptr<TransformComponent>(new TransformComponent(CurX, CurY, 0, 0)));
-                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent(rutaImagenBarrier, renderer)));
-                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, {CurX + ancho/2, CurY + alto/2})));
-                        this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<BarrierComponent>(new BarrierComponent()));
-                        BarrierCounter++;
+                    if (CurX > Margin && CurX < 1920 - Margin && CurY > Margin && CurY < 1080 - Margin) {
+                        if (this->world.IsAreaFree(CurX, CurY, ancho, alto)) {
+                            std::unique_ptr<Entity> Barrier = std::make_unique<Entity>("Barrier_" + std::to_string(BarrierCounter));
+                            Entity& refBarrier = *Barrier;
+                            this->world.AddEntity(std::move(Barrier));
+                            
+                            this->world.AddComponentToEntity(refBarrier.GetId(),std::unique_ptr<TransformComponent>(new TransformComponent(CurX, CurY, 0, 0)));
+
+                            // SELECCIÓN ALEATORIA DE SPRITE (1 de 11) 
+                            int rndIdx = NumberRandomizer(false, 0, 10);  
+                            std::string selectedSprite = barrierSprites[rndIdx];
+                            
+                            this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent(selectedSprite, renderer)));
+                            // -----------------------------------------------
+
+                            this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(ancho, alto, {CurX + ancho/2, CurY + alto/2})));
+                            this->world.AddComponentToEntity(refBarrier.GetId(), std::unique_ptr<BarrierComponent>(new BarrierComponent()));
+                            BarrierCounter++;
+                        }
                     }
                     CurX += OffX; CurY += OffY;
                 }

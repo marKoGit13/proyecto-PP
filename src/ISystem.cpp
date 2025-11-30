@@ -165,11 +165,22 @@ void CollisionSystem::Update(World& world, float dt)
         // Restricción de bordes de pantalla
         float x = std::get<0>(transA->Position);
         float y = std::get<1>(transA->Position);
+        float myW = std::get<0>(colA->Bounds);
+        float myH = std::get<1>(colA->Bounds);
         
+        // Rebote Izquierda / Arriba
         if (x < 0) { std::get<0>(transA->Position) = 0; std::get<0>(transA->Velocity) *= -1; }
         if (y < 0) { std::get<1>(transA->Position) = 0; std::get<1>(transA->Velocity) *= -1; }
-        if (x > WindowWidth - 64) { std::get<0>(transA->Position) = WindowWidth - 64; std::get<0>(transA->Velocity) *= -1; }
-        if (y > WindowHeight - 64) { std::get<1>(transA->Position) = WindowHeight - 64; std::get<1>(transA->Velocity) *= -1; }
+        
+        // Rebote Derecha / Abajo (WindowSize - TamañoEntidad)
+        if (x > WindowWidth - myW) { 
+            std::get<0>(transA->Position) = WindowWidth - myW; 
+            std::get<0>(transA->Velocity) *= -1; 
+        }
+        if (y > WindowHeight - myH) { 
+            std::get<1>(transA->Position) = WindowHeight - myH; 
+            std::get<1>(transA->Velocity) *= -1; 
+        }
 
         // Resolución de colisiones entidad vs entidad
         for (auto& entB : entities) {
@@ -264,8 +275,14 @@ void RenderSystem::Update(World& world, float dt)
             destRect.y = std::get<1>(transform->Position);
             float w, h;
             SDL_GetTextureSize(sprite->Texture, &w, &h);
-            destRect.w = w;
-            destRect.h = h;
+
+            auto collider = static_cast<ColliderComponent*>(entity->GetComponent("Collider"));
+            if (collider) {
+                destRect.w = std::get<0>(collider->Bounds);
+                destRect.h = std::get<1>(collider->Bounds);
+            } else {
+                destRect.w = w; destRect.h = h;
+            }
 
             // Cálculo de rotación visual basada en movimiento
             double angle = 0.0;
@@ -291,8 +308,8 @@ void RenderSystem::Update(World& world, float dt)
 
             // Barra de Vida sobre el jugador
             if (entity->GetComponent("Player") && health) {
-                float barW = 64.0f; float barH = 6.0f;
-                float barX = destRect.x + (destRect.w - barW)/2;
+                float barW = destRect.w; float barH = 6.0f; // Barra del ancho de la nave
+                float barX = destRect.x;
                 float barY = destRect.y - 20;
                 
                 // Fondo rojo

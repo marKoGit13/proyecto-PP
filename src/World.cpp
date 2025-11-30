@@ -17,32 +17,36 @@ void EnemyAI_Loop(EnemyComponent* self, TransformComponent* myTrans, TransformCo
             float destX = pX;
             float destY = pY;
 
-            // Estrategia según rol asignado
+            // Calcular distancia al jugador
+            float dx = pX - myX;
+            float dy = pY - myY;
+            float dist = std::sqrt(dx*dx + dy*dy);
+
+            // Definimos cómo se calcula una posición de flanqueo
+            auto calculateFlankPos = [&](float radiusOffset, float yOffset) {
+                bool goRight = (reinterpret_cast<uintptr_t>(self) % 2 == 0);
+                if (goRight) destX = pX + radiusOffset;
+                else         destX = pX - radiusOffset;
+                destY = pY + yOffset;
+            };
+
             if (self->role == EnemyRole::CHASER) {
-                // Persecución directa a la posición del jugador
-                destX = pX;
-                destY = pY;
+                // Si estás cerca, te ataca directo
+                if (dist < 450.0f) {
+                    destX = pX;
+                    destY = pY;
+                } else {
+                    calculateFlankPos(250.0f, 50.0f);
+                }
             } 
             else if (self->role == EnemyRole::FLANKER) {
-                // Cálculo de distancia para comportamiento dinámico
-                float dx = pX - myX;
-                float dy = pY - myY;
-                float dist = std::sqrt(dx*dx + dy*dy);
-
-                // Si está muy cerca, ataca; si no, flanquea
-                if (dist < 300.0f) {
+                if (dist < 150.0f) {
                     destX = pX;
                     destY = pY;
                 } 
                 else {
-                    // Intenta posicionarse a los costados del jugador
-                    bool goRight = (reinterpret_cast<uintptr_t>(self) % 2 == 0);
-                    float offset = 350.0f; 
-                    
-                    if (goRight) destX += offset;
-                    else         destX -= offset;
-                    
-                    destY += 100.0f; 
+                    // Si no, mantiene su distancia rodeando
+                    calculateFlankPos(350.0f, 100.0f);
                 }
             }
 
@@ -68,11 +72,21 @@ World::~World() {}
 Entity& World::createEntity(SDL_Renderer* renderer){
     auto Information = ReadFromConfigFile("./assets/data.json");
     std::string rutaImagen = std::get<3>(Information);
-    float ancho = std::get<5>(Information);
-    float alto = std::get<6>(Information);
+
+    /*float ancho = std::get<5>(Information);
+    float alto = std::get<6>(Information);*/
+
+    float scale = 0.6f;
+    float ancho = std::get<5>(Information) * scale;
+    float alto = std::get<6>(Information) * scale;
 
     // Intenta encontrar una posición libre aleatoria
+    // Spawn con margen
     float PosicionX = 0, PosicionY = 0;
+    float margin = 100.0f;
+    float maxX = 1920.0f - margin - ancho;
+    float maxY = 600.0f;
+
     for(int i=0; i<10; i++) {
         PosicionX = NumberRandomizer(true, 50.0f, 1800.0f);
         PosicionY = NumberRandomizer(true, 50.0f, 400.0f); 
