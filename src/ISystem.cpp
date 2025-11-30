@@ -41,13 +41,13 @@ void PlayerInputSystem::Update(World& world, float dt) {
     const bool* state = SDL_GetKeyboardState(nullptr);
     if (state[SDL_SCANCODE_ESCAPE]) isRunning = false;
 
-    if (ISystem::TooBad) return; // Si perdiste, no te mueves
+    if (ISystem::TooBad) return; 
 
     for (auto& entity : world.GetEntities()) {
         if (entity->GetComponent("Player")) {
             auto transform = static_cast<TransformComponent*>(entity->GetComponent("Transform"));
             if (transform) {
-                float speed = 350.0f; // Jugador un poco más rápido para compensar enemigos
+                float speed = 350.0f; 
                 std::get<0>(transform->Velocity) = 0;
                 std::get<1>(transform->Velocity) = 0;
                 
@@ -61,7 +61,7 @@ void PlayerInputSystem::Update(World& world, float dt) {
 }
 
 // ========================
-// MOVEMENT SYSTEM (VELOCIDAD + FLOCKING)
+// MOVEMENT SYSTEM
 // ========================
 MovementSystem::MovementSystem() {}
 
@@ -81,10 +81,8 @@ void MovementSystem::Update(World& world, float dt)
         if (entity->GetComponent("Enemy")) {
             auto enemyComp = static_cast<EnemyComponent*>(entity->GetComponent("Enemy"));
             
-            // 1. Ir hacia el objetivo (Calculado por el Hilo)
             float targetX = enemyComp->targetX;
             float targetY = enemyComp->targetY;
-            
             float myX = std::get<0>(transform->Position);
             float myY = std::get<1>(transform->Position);
 
@@ -93,17 +91,14 @@ void MovementSystem::Update(World& world, float dt)
             float len = std::sqrt(dirX*dirX + dirY*dirY);
 
             float moveX = 0, moveY = 0;
-            
-            // --- MEJORA: VELOCIDAD DE ENEMIGOS ---
-            float speed = 180.0f; // Mucho más rápidos
-            // -------------------------------------
+            float speed = 180.0f; 
 
             if (len > 0) {
                 moveX = (dirX / len) * speed;
                 moveY = (dirY / len) * speed;
             }
 
-            // 2. Flocking: Separación (Evitar amontonarse)
+            // Flocking Separation
             float sepX = 0, sepY = 0;
             int neighbors = 0;
 
@@ -116,7 +111,6 @@ void MovementSystem::Update(World& world, float dt)
                 float ody = myY - std::get<1>(otherTrans->Position);
                 float distSq = odx*odx + ody*ody;
 
-                // Radio de separación ajustado
                 if (distSq < 60.0f * 60.0f && distSq > 0.1f) {
                     float dist = std::sqrt(distSq);
                     sepX += (odx / dist) / dist; 
@@ -207,7 +201,6 @@ void CollisionSystem::Update(World& world, float dt)
 
                     if (hitEnemy) {
                         world.Emit(DamageEvent());
-                        // Empuje violento al recibir daño
                         float push = 50.0f;
                         if (ox < oy) std::get<0>(transA->Position) += (dx > 0 ? push : -push);
                         else         std::get<1>(transA->Position) += (dy > 0 ? push : -push);
@@ -226,7 +219,6 @@ DamageSystem::DamageSystem() {
 }
 
 void DamageSystem::Update(World& world, float dt) {
-    // Cooldown baja siempre
     for (auto& ent : world.GetEntities()) {
         if (ent->GetComponent("Player")) {
             auto health = static_cast<HealthComponent*>(ent->GetComponent("Health"));
@@ -250,24 +242,29 @@ void DamageSystem::Update(World& world, float dt) {
 }
 
 // ========================
-// RENDER SYSTEM (GAME OVER & ROTACIÓN)
+// RENDER SYSTEM (UI MEJORADA)
 // ========================
-RenderSystem::RenderSystem(SDL_Renderer* r, float w, float h) : Renderer(r), WindowWidth(w), WindowHeight(h) {}
+RenderSystem::RenderSystem(SDL_Renderer* r, float w, float h, TTF_Font* font) 
+    : Renderer(r), WindowWidth(w), WindowHeight(h), GameFont(font) {}
 
 void RenderSystem::Update(World& world, float dt) 
 {
-    for (const auto& entity : world.GetEntities()) {
+    for (const auto& entity : world.GetEntities()) 
+    {
         auto sprite = static_cast<SpriteComponent*>(entity->GetComponent("Sprite"));
         auto transform = static_cast<TransformComponent*>(entity->GetComponent("Transform"));
         auto health = static_cast<HealthComponent*>(entity->GetComponent("Health"));
+        auto enemy = static_cast<EnemyComponent*>(entity->GetComponent("Enemy"));
 
-        if (sprite && transform && sprite->Texture) {
+        if (sprite && transform && sprite->Texture) 
+        {
             SDL_FRect destRect;
             destRect.x = std::get<0>(transform->Position);
             destRect.y = std::get<1>(transform->Position);
             float w, h;
             SDL_GetTextureSize(sprite->Texture, &w, &h);
-            destRect.w = w; destRect.h = h;
+            destRect.w = w;
+            destRect.h = h;
 
             // Rotación visual
             double angle = 0.0;
@@ -277,10 +274,10 @@ void RenderSystem::Update(World& world, float dt)
                 angle = (std::atan2(vy, vx) * 180.0 / M_PI) + 90.0;
             }
 
-            // Parpadeo si hay daño
+            // Parpadeo
             if (health && health->Cooldown > 0) {
                 if (static_cast<int>(health->Cooldown * 20.0f) % 2 == 0) 
-                     SDL_SetTextureAlphaMod(sprite->Texture, 80);
+                     SDL_SetTextureAlphaMod(sprite->Texture, 100);
                 else SDL_SetTextureAlphaMod(sprite->Texture, 255);
             } else {
                 SDL_SetTextureAlphaMod(sprite->Texture, 255);
@@ -288,30 +285,67 @@ void RenderSystem::Update(World& world, float dt)
 
             SDL_RenderTextureRotated(Renderer, sprite->Texture, nullptr, &destRect, angle, nullptr, SDL_FLIP_NONE);
             SDL_SetTextureAlphaMod(sprite->Texture, 255);
+
+            // --- UI BARRA DE VIDA ---
+            if (entity->GetComponent("Player") && health) {
+                float barW = 64.0f; float barH = 6.0f;
+                float barX = destRect.x + (destRect.w - barW)/2;
+                float barY = destRect.y - 20;
+                
+                SDL_SetRenderDrawColor(Renderer, 255, 0, 0, 255); // Rojo
+                SDL_FRect bg = {barX, barY, barW, barH};
+                SDL_RenderFillRect(Renderer, &bg);
+
+                float hpPct = std::max(0.0f, (float)health->Hp / (float)health->MaxHp);
+                SDL_SetRenderDrawColor(Renderer, 0, 255, 0, 255); // Verde
+                SDL_FRect fg = {barX, barY, barW * hpPct, barH};
+                SDL_RenderFillRect(Renderer, &fg);
+
+                if (GameFont) {
+                    std::string hpTxt = "HP: " + std::to_string(health->Hp);
+                    SDL_Color col = {255,255,255,255};
+                    SDL_Surface* s = TTF_RenderText_Solid(GameFont, hpTxt.c_str(), 0, col);
+                    if(s){
+                        SDL_Texture* t = SDL_CreateTextureFromSurface(Renderer, s);
+                        SDL_FRect tr = {barX + 10, barY - 15, (float)s->w, (float)s->h};
+                        SDL_RenderTexture(Renderer, t, nullptr, &tr);
+                        SDL_DestroySurface(s); SDL_DestroyTexture(t);
+                    }
+                }
+            }
+
+            // --- UI ENEMIGOS ---
+            if (enemy && GameFont) {
+                std::string rTxt = (enemy->role == EnemyRole::CHASER) ? "CHASER" : "FLANKER";
+                SDL_Color col = {255, 200, 0, 255};
+                if(enemy->role == EnemyRole::CHASER) col = {255, 100, 100, 255};
+                
+                SDL_Surface* s = TTF_RenderText_Solid(GameFont, rTxt.c_str(), 0, col);
+                if(s){
+                    SDL_Texture* t = SDL_CreateTextureFromSurface(Renderer, s);
+                    SDL_FRect tr = {destRect.x + (destRect.w - s->w)/2, destRect.y - 15, (float)s->w, (float)s->h};
+                    SDL_RenderTexture(Renderer, t, nullptr, &tr);
+                    SDL_DestroySurface(s); SDL_DestroyTexture(t);
+                }
+            }
         }
     }
 
-    // --- PANTALLA DE GAME OVER ---
+    // --- GAME OVER ---
     if (TooBad) {
-        // Fondo Oscuro para que se lea bien
         SDL_SetRenderDrawBlendMode(Renderer, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(Renderer, 20, 0, 0, 200); // Rojo muy oscuro casi negro
+        SDL_SetRenderDrawColor(Renderer, 20, 0, 0, 220);
         SDL_FRect screen = {0, 0, WindowWidth, WindowHeight};
         SDL_RenderFillRect(Renderer, &screen);
-
-        // Mensaje
-        SDL_SetRenderDrawColor(Renderer, 255, 50, 50, 255); // Texto rojo brillante
-        SDL_SetRenderScale(Renderer, 4.0f, 4.0f); // Texto MUY grande
         
-        std::string msgOver = "GAME OVER";
-        // Centrar aprox (ajuste manual)
-        SDL_RenderDebugText(Renderer, (WindowWidth/4 - 80)/2, (WindowHeight/4 - 20)/2, msgOver.c_str());
+        SDL_SetRenderDrawColor(Renderer, 255, 50, 50, 255);
+        SDL_SetRenderScale(Renderer, 4.0f, 4.0f);
+        SDL_RenderDebugText(Renderer, (WindowWidth/4 - 80)/2, (WindowHeight/4 - 20)/2, "GAME OVER");
         
-        SDL_SetRenderDrawColor(Renderer, 255, 255, 255, 255); // Texto blanco
+        SDL_SetRenderDrawColor(Renderer, 255, 255, 255, 255);
         SDL_SetRenderScale(Renderer, 2.0f, 2.0f);
-        std::string msgTime = "Sobreviviste: " + std::to_string((int)world.TimeElapsed) + " seg";
-        SDL_RenderDebugText(Renderer, (WindowWidth/2 - 140)/2, (WindowHeight/2 + 50)/2, msgTime.c_str());
-        
+        std::string msg = "Survived: " + std::to_string((int)world.TimeElapsed) + "s";
+        SDL_RenderDebugText(Renderer, (WindowWidth/2 - 80)/2, (WindowHeight/2 + 50)/2, msg.c_str());
         SDL_SetRenderScale(Renderer, 1.0f, 1.0f);
     }
 }

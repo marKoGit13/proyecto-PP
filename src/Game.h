@@ -1,5 +1,6 @@
 #pragma once
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <SDL3_image/SDL_image.h>
 #include <tuple>
 #include <string>
@@ -21,12 +22,14 @@ class Game
         SDL_Window* window;
         SDL_Renderer* renderer;
         bool isRunning;
+        SDL_Texture* textureBackground = nullptr;
         
-        // --- CORRECCIÓN: Variable para el fondo ---
-        SDL_Texture* textureBackground = nullptr; 
-        // ----------------------------------------
+        // --- NUEVO: Fuente del juego ---
+        TTF_Font* globalFont = nullptr;
+        // -------------------------------
 
         std::tuple<int,int> AnchoAlto;
+        // ... resto de variables ...
         int cantidad;
         std::string rutaImagenCharacter;
         std::string rutaImagenBackground;
@@ -46,7 +49,7 @@ class Game
 
     public:
         Game();
-        ~Game() = default;
+        ~Game(); // Agrega destructor para limpiar TTF
         void Initialize();
         void Run();
         void Start();

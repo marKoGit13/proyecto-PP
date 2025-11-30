@@ -3,6 +3,7 @@
 #include <tuple>
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <json.hpp>
 #include <fstream>
 #include <random>
@@ -43,7 +44,10 @@ class RenderSystem : public ISystem
         SDL_Renderer* Renderer;
         float WindowWidth;
         float WindowHeight;
-        RenderSystem(SDL_Renderer* renderer, float windowwidth, float windowheight);
+        TTF_Font* GameFont; // <--- Variable para la fuente
+
+        // Constructor modificado para recibir la fuente
+        RenderSystem(SDL_Renderer* renderer, float windowwidth, float windowheight, TTF_Font* font);
         void Update(World& world, float dt) override;
 };
 
