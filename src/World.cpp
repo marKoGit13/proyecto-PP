@@ -2,20 +2,31 @@
 
 World::World() {
     enemycounter = 0;
+    TimeElapsed = 0.0f;
 }
 
-World::~World() {
-}
-//Genera nuevos enemigos automáticamente
+World::~World() {}
+
+// --- CORRECCIÓN: createEntity ahora busca posición segura ---
 Entity& World::createEntity(SDL_Renderer* renderer){
+    // Leemos el JSON una vez (podrías optimizar esto haciéndolo miembro de clase, pero por ahora está bien)
     auto Information = ReadFromConfigFile("./assets/data.json");
-    
     std::string rutaImagen = std::get<3>(Information);
     float ancho = std::get<5>(Information);
     float alto = std::get<6>(Information);
 
-    float PosicionX = NumberRandomizer(true, 100.0f, 1800.0f);
-    float PosicionY = NumberRandomizer(true, 100.0f, 1000.0f);
+    float PosicionX = 0;
+    float PosicionY = 0;
+    
+    // Intentar encontrar posición libre (máximo 10 intentos)
+    for(int i = 0; i < 10; i++) {
+        PosicionX = NumberRandomizer(true, 50.0f, 1800.0f);
+        PosicionY = NumberRandomizer(true, 50.0f, 500.0f); // Spawnear en la mitad superior
+        if(IsAreaFree(PosicionX, PosicionY, ancho, alto)) {
+            break;
+        }
+    }
+
     float Velocity = NumberRandomizer(true, 50.f, 100.0f);
 
     auto Enemy = std::make_unique<Entity>("Enemy_" + std::to_string(enemycounter));
@@ -25,35 +36,53 @@ Entity& World::createEntity(SDL_Renderer* renderer){
 
     AddComponentToEntity(refEnemy.GetId(), std::make_unique<TransformComponent>(PosicionX, PosicionY, Velocity, Velocity));
     AddComponentToEntity(refEnemy.GetId(), std::make_unique<SpriteComponent>(rutaImagen, renderer));
-    AddComponentToEntity(refEnemy.GetId(), std::make_unique<ColliderComponent>(ancho, alto, std::pair<float,float>{PosicionX + ancho/2, PosicionY - alto/2}));
+    AddComponentToEntity(refEnemy.GetId(), std::make_unique<ColliderComponent>(ancho, alto, std::pair<float,float>{PosicionX + ancho/2, PosicionY + alto/2})); // Collider centrado
     AddComponentToEntity(refEnemy.GetId(), std::make_unique<EnemyComponent>());
+    
+    // Agregar vida al enemigo para evitar crasheos si el sistema de daño la busca
+    AddComponentToEntity(refEnemy.GetId(), std::make_unique<HealthComponent>(1));
 
     return refEnemy;
 }
-//Emite eventos nuevos
+
+// --- IMPLEMENTACIÓN DE IsAreaFree ---
+bool World::IsAreaFree(float x, float y, float w, float h) {
+    float myLeft = x;
+    float myRight = x + w;
+    float myTop = y;
+    float myBottom = y + h;
+
+    for (auto& entity : entities) {
+        auto collider = entity->GetComponent("Collider");
+        if (!collider) continue;
+        
+        ColliderComponent* col = static_cast<ColliderComponent*>(collider);
+        
+        if (myLeft < col->getRight() && myRight > col->getLeft() &&
+            myTop < col->getBottom() && myBottom > col->getTop()) {
+            return false; // Ocupado
+        }
+    }
+    return true; // Libre
+}
+
 void World::Emit(const Event& event) {
     EventBus::Instance().Enqueue(std::make_unique<Event>(event));
 }
-//Consulta el bus de eventos sin eliminar elementos y copiando la cola
+
 bool World::Poll(Event& out, const std::string& type) {
     auto& queue = EventBus::Instance().GetQueue();
-    const size_t size = queue.size();
-    bool found = false;
+    if (queue.empty()) return false;
 
-    for (size_t i = 0; i < size; ++i) {
-        std::unique_ptr<Event> e = std::move(queue.front());
+    // Lógica simple: ver si el primero coincide (para no complicar el loop)
+    if (queue.front()->Type == type) {
+        out = *queue.front();
         queue.pop();
-
-        if (!found && e->Type == type) {
-            out = *e;
-            found = true;
-        }
-
-        queue.push(std::move(e)); 
+        return true;
     }
-
-    return found;
+    return false;
 }
+
 void World::AddEntity(std::unique_ptr<Entity> entity){
     entities.push_back(std::move(entity));
 }
@@ -66,18 +95,14 @@ void World::AddComponentToEntity(const std::string& Id, std::unique_ptr<Componen
 
 Entity* World::GetEntityByName(const std::string& name) {
     for (const auto& entity : entities) {
-        if (entity->GetName() == name) {
-            return entity.get();
-        }
+        if (entity->GetName() == name) return entity.get();
     }
     return nullptr;
 }
 
 Entity* World::GetEntityById(const std::string& Id) {
     for (const auto& entity : entities) {
-        if (entity->GetId() == Id) {
-            return entity.get();
-        }
+        if (entity->GetId() == Id) return entity.get();
     }
     return nullptr;
 }
@@ -85,38 +110,3 @@ Entity* World::GetEntityById(const std::string& Id) {
 std::vector<std::unique_ptr<Entity>>& World::GetEntities() {
     return entities;
 }
-
-bool World::IsAreaFree(float x, float y, float w, float h) 
-{
-    float newLeft = x;
-    float newRight = x + w;
-    float newTop = y;
-    float newBottom = y + h;
-
-    for (auto& entity : entities) {
-        auto collider = entity->GetComponent("ColliderComponent");
-        if (!collider) continue;
-        
-        // Obtener posición actual del collider existente
-        // Asumiendo que guardas Bounds en el collider
-        ColliderComponent* col = static_cast<ColliderComponent*>(collider);
-        
-        // Calcular sus bordes (AABB) basado en MidPoint y Bounds
-        float halfW = std::get<0>(col->Bounds) / 2.0f;
-        float halfH = std::get<1>(col->Bounds) / 2.0f;
-        float existLeft = std::get<0>(col->MidPoint) - halfW;
-        float existRight = std::get<0>(col->MidPoint) + halfW;
-        float existTop = std::get<1>(col->MidPoint) - halfH;
-        float existBottom = std::get<1>(col->MidPoint) + halfH;
-
-        // Verificar intersección
-        bool collisionX = newLeft < existRight && newRight > existLeft;
-        bool collisionY = newTop < existBottom && newBottom > existTop;
-
-        if (collisionX && collisionY) {
-            return false; // Está ocupado
-        }
-    }
-    return true; // Está libre
-}
-

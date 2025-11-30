@@ -1,11 +1,22 @@
 #include "ISystem.h"
 #include <cmath>
 #include <string>
+#include <algorithm> // Para std::max
+
+// Definir PI si no está definido
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+bool ISystem::TooBad = false;
+
+ISystem::ISystem() {}
+ISystem::~ISystem() {}
 
 // =========================================================
 // FUNCIONES AUXILIARES
 // =========================================================
-bool CheckCollision(ColliderComponent* a, ColliderComponent* b, float& overlapX, float& overlapY) {
+bool CheckOverlap(ColliderComponent* a, ColliderComponent* b, float& overlapX, float& overlapY) {
     float dx = std::get<0>(a->MidPoint) - std::get<0>(b->MidPoint);
     float dy = std::get<1>(a->MidPoint) - std::get<1>(b->MidPoint);
     float combinedHalfW = (std::get<0>(a->Bounds) + std::get<0>(b->Bounds)) / 2.0f;
@@ -19,34 +30,29 @@ bool CheckCollision(ColliderComponent* a, ColliderComponent* b, float& overlapX,
     return false;
 }
 
-ISystem::ISystem() {}
-ISystem::~ISystem() {}
-bool ISystem::TooBad = false;
-
 // =========================================================
-// PLAYER INPUT SYSTEM (Arreglado ESC)
+// PLAYER INPUT SYSTEM
 // =========================================================
 PlayerInputSystem::PlayerInputSystem(bool& isrunning) : isRunning(isrunning) {}
 
 void PlayerInputSystem::Update(World& world, float dt) {
-    const bool* state = SDL_GetKeyboardState(nullptr);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT) isRunning = false;
     }
 
-    // --- CORRECCIÓN: Salir con ESCAPE ---
-    if (state[SDL_SCANCODE_ESCAPE]) {
-        isRunning = false;
-    }
-    
+    const bool* state = SDL_GetKeyboardState(nullptr);
+    if (state[SDL_SCANCODE_ESCAPE]) isRunning = false;
+
+    // Input continuo para movimiento suave
     for (auto& entity : world.GetEntities()) {
         if (entity->GetComponent("Player")) {
             auto transform = static_cast<TransformComponent*>(entity->GetComponent("Transform"));
             if (transform) {
-                float speed = 300.0f;
+                float speed = 300.0f; 
                 std::get<0>(transform->Velocity) = 0;
                 std::get<1>(transform->Velocity) = 0;
+                
                 if (state[SDL_SCANCODE_W]) std::get<1>(transform->Velocity) = -speed;
                 if (state[SDL_SCANCODE_S]) std::get<1>(transform->Velocity) = speed;
                 if (state[SDL_SCANCODE_A]) std::get<0>(transform->Velocity) = -speed;
@@ -57,128 +63,82 @@ void PlayerInputSystem::Update(World& world, float dt) {
 }
 
 // =========================================================
-// SPAWN SYSTEM (Arreglado Enemigos)
-// =========================================================
-SpawnSystem::SpawnSystem(SDL_Renderer* r) : Renderer(r) {}
-
-void SpawnSystem::Update(World& world, float dt) {
-    static float timer = 0.0f;
-    static int enemyCounter = 0;
-    float spawnInterval = 2.0f; // Spawnear cada 2 segundos
-
-    timer += dt;
-
-    if (timer >= spawnInterval) {
-        timer = 0.0f;
-
-        // Intentar spawnear enemigo
-        float enemyW = 64.0f;
-        float enemyH = 64.0f;
-        
-        // Intentar 10 veces encontrar una posicion libre
-        for (int i = 0; i < 10; i++) {
-            float randX = NumberRandomizer(true, 50.0f, 1800.0f); // Asumiendo pantalla 1920
-            float randY = NumberRandomizer(true, 50.0f, 400.0f);  // Parte superior de la pantalla
-
-            if (world.IsAreaFree(randX, randY, enemyW, enemyH)) {
-                // Crear Enemigo
-                std::unique_ptr<Entity> Enemy = std::make_unique<Entity>("Enemy_" + std::to_string(enemyCounter++));
-                
-                // NOTA: Asegúrate que la ruta sea correcta. Uso la misma de tus assets.
-                world.AddComponentToEntity(Enemy->GetId(), std::unique_ptr<TransformComponent>(new TransformComponent(randX, randY, 0, 0)));
-                world.AddComponentToEntity(Enemy->GetId(), std::unique_ptr<SpriteComponent>(new SpriteComponent("./assets/EnemySprite.png", Renderer)));
-                world.AddComponentToEntity(Enemy->GetId(), std::unique_ptr<ColliderComponent>(new ColliderComponent(enemyW, enemyH, {randX + enemyW/2, randY + enemyH/2})));
-                world.AddComponentToEntity(Enemy->GetId(), std::unique_ptr<EnemyComponent>(new EnemyComponent()));
-                
-                // Health opcional para enemigos
-                world.AddComponentToEntity(Enemy->GetId(), std::unique_ptr<HealthComponent>(new HealthComponent(1)));
-
-                world.AddEntity(std::move(Enemy));
-                break; // Éxito, salir del loop de intentos
-            }
-        }
-    }
-}
-
-// =========================================================
-// MOVEMENT SYSTEM 
+// MOVEMENT SYSTEM (IA y Física)
 // =========================================================
 MovementSystem::MovementSystem() {}
 
 void MovementSystem::Update(World& world, float dt) 
 {
+    if (TooBad) return; // Congelar si Game Over
+
     Entity* player = nullptr;
     TransformComponent* playerTrans = nullptr;
     
     // Buscar jugador
-    for (auto& entity : world.GetEntities()) {
-        if (entity->GetComponent("Player")) {
-            player = entity.get();
-            playerTrans = static_cast<TransformComponent*>(entity->GetComponent("Transform"));
+    for (auto& ent : world.GetEntities()) {
+        if (ent->GetComponent("Player")) {
+            player = ent.get();
+            playerTrans = static_cast<TransformComponent*>(ent->GetComponent("Transform"));
             break;
         }
     }
 
     for (auto& entity : world.GetEntities()) 
     {
-        // 1. IA Simple: Perseguir jugador
+        auto transform = static_cast<TransformComponent*>(entity->GetComponent("Transform"));
+        auto collider = static_cast<ColliderComponent*>(entity->GetComponent("Collider"));
+        
+        if (!transform) continue;
+
+        // IA de Persecución (Enemigos apuntan al jugador)
         if (playerTrans && entity->GetComponent("Enemy")) {
-            auto enemyTrans = static_cast<TransformComponent*>(entity->GetComponent("Transform"));
-            if(enemyTrans) {
-                float dx = std::get<0>(playerTrans->Position) - std::get<0>(enemyTrans->Position);
-                float dy = std::get<1>(playerTrans->Position) - std::get<1>(enemyTrans->Position);
-                float length = std::sqrt(dx*dx + dy*dy);
-                
-                if (length > 0) {
-                    float speed = 100.0f;
-                    std::get<0>(enemyTrans->Velocity) = (dx / length) * speed;
-                    std::get<1>(enemyTrans->Velocity) = (dy / length) * speed;
-                }
+            float dx = std::get<0>(playerTrans->Position) - std::get<0>(transform->Position);
+            float dy = std::get<1>(playerTrans->Position) - std::get<1>(transform->Position);
+            float dist = std::sqrt(dx*dx + dy*dy);
+            
+            if (dist > 5.0f) { // Evitar división por cero y jittering
+                float enemySpeed = 120.0f;
+                std::get<0>(transform->Velocity) = (dx / dist) * enemySpeed;
+                std::get<1>(transform->Velocity) = (dy / dist) * enemySpeed;
             }
         }
 
-        // 2. Movimiento Física
-        auto transform = entity->GetComponent("Transform");
-        if (transform) 
-        {
-            TransformComponent* trans = static_cast<TransformComponent*>(transform);
-            std::get<0>(trans->Position) += std::get<0>(trans->Velocity) * dt;
-            std::get<1>(trans->Position) += std::get<1>(trans->Velocity) * dt;
+        // Aplicar Movimiento
+        std::get<0>(transform->Position) += std::get<0>(transform->Velocity) * dt;
+        std::get<1>(transform->Position) += std::get<1>(transform->Velocity) * dt;
 
-            // Sincronizar Collider
-            auto collider = entity->GetComponent("Collider");
-            if (collider) {
-                ColliderComponent* col = static_cast<ColliderComponent*>(collider);
-                float w = std::get<0>(col->Bounds);
-                float h = std::get<1>(col->Bounds);
-                col->MidPoint = {
-                    std::get<0>(trans->Position) + w / 2.0f,
-                    std::get<1>(trans->Position) + h / 2.0f
-                };
-            }
+        // Sincronizar Collider
+        if (collider) {
+            collider->MidPoint = {
+                std::get<0>(transform->Position) + std::get<0>(collider->Bounds)/2.0f,
+                std::get<1>(transform->Position) + std::get<1>(collider->Bounds)/2.0f
+            };
         }
     }
 }
 
 // =========================================================
-// COLLISION SYSTEM
+// COLLISION SYSTEM (Con rebote y empuje)
 // =========================================================
 CollisionSystem::CollisionSystem(int w, int h) : WindowWidth(w), WindowHeight(h) {}
 
 void CollisionSystem::Update(World& world, float dt) 
 {
+    if (TooBad) return;
+
     auto& entities = world.GetEntities();
-    for (auto& entityA : entities) 
+
+    for (auto& entA : entities) 
     {
-        bool isPlayer = entityA->GetComponent("Player") != nullptr;
-        bool isEnemy = entityA->GetComponent("Enemy") != nullptr;
+        bool isPlayer = entA->GetComponent("Player") != nullptr;
+        bool isEnemy = entA->GetComponent("Enemy") != nullptr;
         if (!isPlayer && !isEnemy) continue;
 
-        auto transA = static_cast<TransformComponent*>(entityA->GetComponent("Transform"));
-        auto colA = static_cast<ColliderComponent*>(entityA->GetComponent("Collider"));
+        auto transA = static_cast<TransformComponent*>(entA->GetComponent("Transform"));
+        auto colA = static_cast<ColliderComponent*>(entA->GetComponent("Collider"));
         if (!transA || !colA) continue;
 
-        // Límites pantalla
+        // Rebote en bordes de pantalla
         float x = std::get<0>(transA->Position);
         float y = std::get<1>(transA->Position);
         float w = std::get<0>(colA->Bounds);
@@ -189,33 +149,49 @@ void CollisionSystem::Update(World& world, float dt)
         if (x + w > WindowWidth) { std::get<0>(transA->Position) = WindowWidth - w; std::get<0>(transA->Velocity) *= -1; }
         if (y + h > WindowHeight) { std::get<1>(transA->Position) = WindowHeight - h; std::get<1>(transA->Velocity) *= -1; }
 
-        for (auto& entityB : entities) 
+        // Colisiones Entidad vs Entidad
+        for (auto& entB : entities) 
         {
-            if (entityA.get() == entityB.get()) continue;
-            auto colB = static_cast<ColliderComponent*>(entityB->GetComponent("Collider"));
+            if (entA.get() == entB.get()) continue;
+
+            auto colB = static_cast<ColliderComponent*>(entB->GetComponent("Collider"));
             if (!colB) continue;
 
             float ox = 0, oy = 0;
-            if (CheckCollision(colA, colB, ox, oy)) 
+            if (CheckOverlap(colA, colB, ox, oy)) 
             {
-                if (entityB->GetComponent("Barrier")) 
+                bool hitBarrier = entB->GetComponent("Barrier") != nullptr;
+                bool hitEnemy = isPlayer && entB->GetComponent("Enemy") != nullptr;
+
+                if (hitBarrier || hitEnemy) 
                 {
+                    // Lógica de Empuje (Push Out)
                     float dx = std::get<0>(colA->MidPoint) - std::get<0>(colB->MidPoint);
                     float dy = std::get<1>(colA->MidPoint) - std::get<1>(colB->MidPoint);
 
-                    if (ox < oy) { // X
+                    if (ox < oy) { // Eje X
                         if (dx > 0) std::get<0>(transA->Position) += ox;
                         else        std::get<0>(transA->Position) -= ox;
-                        std::get<0>(transA->Velocity) *= -1;
-                    } else { // Y
+                        std::get<0>(transA->Velocity) *= -1.0f;
+                    } else { // Eje Y
                         if (dy > 0) std::get<1>(transA->Position) += oy;
                         else        std::get<1>(transA->Position) -= oy;
-                        std::get<1>(transA->Velocity) *= -1;
+                        std::get<1>(transA->Velocity) *= -1.0f;
                     }
-                    colA->MidPoint = { std::get<0>(transA->Position) + w/2.0f, std::get<1>(transA->Position) + h/2.0f };
-                }
-                else if (isPlayer && entityB->GetComponent("Enemy")) {
-                    world.Emit(DamageEvent());
+
+                    // Actualizar Collider
+                    colA->MidPoint = {
+                        std::get<0>(transA->Position) + w/2.0f,
+                        std::get<1>(transA->Position) + h/2.0f
+                    };
+
+                    // Daño y separación extra
+                    if (hitEnemy) {
+                        world.Emit(DamageEvent());
+                        float push = 30.0f; // Empuje fuerte
+                        if (ox < oy) std::get<0>(transA->Position) += (dx > 0 ? push : -push);
+                        else         std::get<1>(transA->Position) += (dy > 0 ? push : -push);
+                    }
                 }
             }
         }
@@ -223,66 +199,156 @@ void CollisionSystem::Update(World& world, float dt)
 }
 
 // =========================================================
-// RENDER SYSTEM
+// DAMAGE SYSTEM (Invencibilidad)
+// =========================================================
+DamageSystem::DamageSystem() {
+    EventBus::Instance().Suscribe("DamageEvent", [&](Event* e) { pendingDamage = true; });
+}
+
+void DamageSystem::Update(World& world, float dt) 
+{
+    // Reducir cooldown siempre
+    for (auto& ent : world.GetEntities()) {
+        if (ent->GetComponent("Player")) {
+            auto health = static_cast<HealthComponent*>(ent->GetComponent("Health"));
+            if (health && health->Cooldown > 0) {
+                health->Cooldown -= dt;
+            }
+        }
+    }
+
+    if (pendingDamage) 
+    {
+        for (auto& ent : world.GetEntities()) {
+            if (ent->GetComponent("Player")) {
+                auto health = static_cast<HealthComponent*>(ent->GetComponent("Health"));
+                
+                if (health && health->Cooldown <= 0) {
+                    health->Hp -= 1;
+                    health->Cooldown = 1.5f; // 1.5 segundos de invencibilidad
+                    spdlog::info("DAÑO! Vida: {}", health->Hp);
+                    
+                    if (health->Hp <= 0) {
+                        spdlog::error("GAME OVER - PERDISTE");
+                        TooBad = true;
+                    }
+                }
+            }
+        }
+        pendingDamage = false;
+    }
+}
+
+// =========================================================
+// RENDER SYSTEM (Rotación y Game Over UI)
 // =========================================================
 RenderSystem::RenderSystem(SDL_Renderer* r, float w, float h) : Renderer(r), WindowWidth(w), WindowHeight(h) {}
 
 void RenderSystem::Update(World& world, float dt) 
 {
-    for (auto& entity : world.GetEntities()) 
+    for (const auto& entity : world.GetEntities()) 
     {
-        auto sprite = entity->GetComponent("Sprite"); 
-        auto transform = entity->GetComponent("Transform");
-        
-        if (sprite && transform) 
-        {
-            SpriteComponent* spr = static_cast<SpriteComponent*>(sprite);
-            TransformComponent* trans = static_cast<TransformComponent*>(transform);
-            
-            if (!spr->Texture) continue;
+        auto sprite = static_cast<SpriteComponent*>(entity->GetComponent("Sprite"));
+        auto transform = static_cast<TransformComponent*>(entity->GetComponent("Transform"));
+        auto health = static_cast<HealthComponent*>(entity->GetComponent("Health"));
 
+        if (sprite && transform && sprite->Texture) 
+        {
             SDL_FRect destRect;
-            destRect.x = std::get<0>(trans->Position);
-            destRect.y = std::get<1>(trans->Position);
-            float w = 0, h = 0;
-            SDL_GetTextureSize(spr->Texture, &w, &h);
+            destRect.x = std::get<0>(transform->Position);
+            destRect.y = std::get<1>(transform->Position);
+            
+            float w, h;
+            SDL_GetTextureSize(sprite->Texture, &w, &h);
             destRect.w = w;
             destRect.h = h;
 
-            // Invencibilidad
-            auto health = entity->GetComponent("Health"); 
-            if (health) {
-                HealthComponent* hp = static_cast<HealthComponent*>(health);
-                if (hp->Cooldown > 0) {
-                    hp->Cooldown -= dt; // --- IMPORTANTE: BAJAR EL COOLDOWN AQUÍ O EN DAMAGE SYSTEM ---
-                    if ((int)(hp->Cooldown * 15) % 2 == 0) SDL_SetTextureAlphaMod(spr->Texture, 100);
-                    else SDL_SetTextureAlphaMod(spr->Texture, 255);
-                } else {
-                    SDL_SetTextureAlphaMod(spr->Texture, 255);
-                }
+            // --- 1. LOGICA DE ROTACIÓN (Recuperada) ---
+            // Calculamos el ángulo en base a la velocidad actual
+            double angle = 0.0;
+            float vx = std::get<0>(transform->Velocity);
+            float vy = std::get<1>(transform->Velocity);
+
+            // Si se está moviendo, calculamos hacia donde apunta
+            if (std::abs(vx) > 0.1f || std::abs(vy) > 0.1f) {
+                // atan2 devuelve radianes, convertimos a grados.
+                // Sumamos 90 grados porque los sprites suelen mirar hacia "arriba" (Norte)
+                angle = (std::atan2(vy, vx) * 180.0 / M_PI) + 90.0;
             }
-            SDL_RenderTexture(Renderer, spr->Texture, nullptr, &destRect);
-            SDL_SetTextureAlphaMod(spr->Texture, 255);
+            // ------------------------------------------
+
+            // --- 2. LOGICA DE PARPADEO ---
+            if (health && health->Cooldown > 0) {
+                if (static_cast<int>(health->Cooldown * 20.0f) % 2 == 0) {
+                    SDL_SetTextureAlphaMod(sprite->Texture, 100);
+                } else {
+                    SDL_SetTextureAlphaMod(sprite->Texture, 255);
+                }
+            } else {
+                SDL_SetTextureAlphaMod(sprite->Texture, 255);
+            }
+
+            // Renderizar con rotación
+            SDL_RenderTextureRotated(Renderer, sprite->Texture, nullptr, &destRect, angle, nullptr, SDL_FLIP_NONE);
+            
+            // Restaurar alpha
+            SDL_SetTextureAlphaMod(sprite->Texture, 255);
         }
+    }
+
+    // --- 3. PANTALLA DE GAME OVER CON TIEMPO ---
+    if (TooBad) {
+        // Fondo Rojo Transparente
+        SDL_SetRenderDrawBlendMode(Renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(Renderer, 200, 0, 0, 180); 
+        SDL_FRect screen = {0, 0, WindowWidth, WindowHeight};
+        SDL_RenderFillRect(Renderer, &screen);
+
+        // Cuadro de Texto
+        SDL_SetRenderDrawColor(Renderer, 0, 0, 0, 200);
+        SDL_FRect box = {WindowWidth/2 - 200, WindowHeight/2 - 50, 400, 100};
+        SDL_RenderFillRect(Renderer, &box);
+
+        // Texto (Usando debug text de SDL3)
+        SDL_SetRenderDrawColor(Renderer, 255, 255, 255, 255);
+        SDL_SetRenderScale(Renderer, 2.0f, 2.0f); // Texto más grande
+        
+        std::string msg1 = "GAME OVER";
+        std::string msg2 = "Sobreviviste: " + std::to_string((int)world.TimeElapsed) + " seg";
+        
+        // Ajustar coordenadas según la escala (se divide por la escala)
+        SDL_RenderDebugText(Renderer, (WindowWidth/2 - 60)/2, (WindowHeight/2 - 30)/2, msg1.c_str());
+        SDL_RenderDebugText(Renderer, (WindowWidth/2 - 120)/2, (WindowHeight/2 + 10)/2, msg2.c_str());
+        
+        SDL_SetRenderScale(Renderer, 1.0f, 1.0f); // Reset escala
     }
 }
 
-DamageSystem::DamageSystem() {}
-void DamageSystem::Update(World& world, float dt) {
-    // Si manejas el cooldown de daño aqui, asegúrate de restarlo
-    for(auto& entity : world.GetEntities()) {
-        auto health = entity->GetComponent("Health");
-        if(health) {
-            static_cast<HealthComponent*>(health)->Cooldown -= dt;
-            if(static_cast<HealthComponent*>(health)->Cooldown < 0) 
-                static_cast<HealthComponent*>(health)->Cooldown = 0;
-        }
+// =========================================================
+// SPAWN Y TIMER
+// =========================================================
+SpawnSystem::SpawnSystem(SDL_Renderer* r) : Renderer(r) {
+    EventBus::Instance().Suscribe("SpawnEvent", [&](Event* e) { pendingSpawn = true; });
+}
+void SpawnSystem::Update(World& world, float dt) {
+    if (TooBad) return;
+    if (pendingSpawn) {
+        world.createEntity(Renderer);
+        pendingSpawn = false;
     }
 }
 
-float TimerSystem::totaltimer = 0;
-float TimerSystem::spawntimer = 0;
+float TimerSystem::totaltimer = 0.f;
+float TimerSystem::spawntimer = 0.f;
 TimerSystem::TimerSystem(float interval) : Interval(interval) {}
 void TimerSystem::Update(World& world, float dt) {
+    if (TooBad) return;
     totaltimer += dt;
+    spawntimer += dt;
+    world.TimeElapsed = totaltimer;
+
+    if (spawntimer >= Interval) {
+        world.Emit(SpawnEvent());
+        spawntimer = 0.f;
+    }
 }
